@@ -26,3 +26,6 @@ tensorflow==2.10.1
 opencv-python
 
 from_root
+dotenv
+
+kaggle
