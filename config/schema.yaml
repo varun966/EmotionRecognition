@@ -1,0 +1,47 @@
+dataset_name: FER2013
+format: folder
+root_path: data/raw
+
+splits:
+  train:
+    path: train
+    expected_classes: 7
+    class_names:
+      - angry
+      - disgust
+      - fear
+      - happy
+      - sad
+      - surprise
+      - neutral
+    
+    min_images_per_class: 400
+    max_images_per_class: 8000
+
+  test:
+    path: test
+    expected_classes: 7
+    class_names:
+      - angry
+      - disgust
+      - fear 
+      - happy 
+      - sad
+      - surprise
+      - neutral
+
+    min_images_per_class: 400 
+    max_images_per_class: 4000
+
+image:
+  allowed_extensions: [jpg, jpeg, png]
+  shape: [48, 48]
+  color_mode: grayscale 
+  pixel_range: [0, 255]
+  allow_corrupt_images: false 
+
+checks:
+  total_class_must_match: true
+  min_class_images_threshold: true 
+  corrupted_images_check: true 
+  mismatched_size_check: true 

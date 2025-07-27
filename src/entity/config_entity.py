@@ -21,7 +21,18 @@ training_pipleine_config: TrainingPiplelineConfig = TrainingPiplelineConfig()
 @dataclass
 class DataIngestionConfig:
     data_ingestion_dir: str = training_pipleine_config.data_dir
-    training_file_path: str = os.path.join
+    training_file_path: str = os.path.join(data_ingestion_dir, TRAIN_FILE_NAME)
+    testing_file_path: str = os.path.join(data_ingestion_dir, TEST_FILE_NAME)
+    train_val_split_ration: float = DATA_INGESTION_TRAIN_VAL_SPLIT_RATIO
+
+@dataclass
+class DataValidationConfig:
+    data_validation_dir: str = os.path.join(training_pipleine_config.data_dir, DATA_VALIDATION_DIR_NAME)
+    validation_report_file_path: str = os.path.join(data_validation_dir, DATA_VALIDATION_REPORT_FILE_NAME)
+
+@dataclass
+class DataTransformationConfig:
+    data_transformation_dir: str = os.path.join(training_pipleine_config.data_dir, )
 
 
 
