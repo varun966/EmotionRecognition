@@ -51,7 +51,7 @@ class DataIngestion:
 
             logging.info("Exited initiate_data_ingestion method of import_dataset class")
 
-            data_ingestion_artifact = DataIngestionArtifact(trained_file_path = self.data_ingestion_config.training_file_path, 
+            data_ingestion_artifact = DataIngestionArtifact(raw_data_dir=DOWNLOAD_PATH , train_file_path = self.data_ingestion_config.training_file_path, 
                                                             test_file_path = self.data_ingestion_config.testing_file_path)
             logging.info(f"Data ingestion artifact: {data_ingestion_artifact}")
             return data_ingestion_artifact

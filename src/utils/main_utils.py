@@ -13,3 +13,7 @@ def read_yaml_file(file_path: str) -> dict:
         
     except Exception as e:
         raise MyException(e, sys) from e
+    
+def check_folder_exists(file_path) -> None:
+    if not os.listdir.exists(file_path):
+        os.makedirs(file_path)

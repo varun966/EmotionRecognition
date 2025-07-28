@@ -35,6 +35,8 @@ DATA_VALIDATION_REPORT_FILE_NAME: str = "report.yaml"
 SCHEMA_FILE_PATH = os.path.join("config", "schema.yaml")
 
 
+PROCESSED_FOLDER = from_root('data/processed')
+
 
 
 

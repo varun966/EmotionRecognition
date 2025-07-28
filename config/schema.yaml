@@ -30,7 +30,7 @@ splits:
       - surprise
       - neutral
 
-    min_images_per_class: 400 
+    min_images_per_class: 100
     max_images_per_class: 4000
 
 image:
