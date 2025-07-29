@@ -6,7 +6,7 @@ from src.logger import logging
 from src.exception import MyException
 from src.constants import *
 from src.entity.config_entity import DataTransformationConfig
-from src.entity.artifact_entity import DataIngestionArtifact, DataValidationArtifact #, DataTransformationArtifact
+from src.entity.artifact_entity import DataIngestionArtifact, DataValidationArtifact, DataTransformationArtifact
 from src.utils.main_utils import check_folder_exists
 
 class DataTransformation:
@@ -62,8 +62,10 @@ class DataTransformation:
     def initiate_data_transformation(self): #->DataTransformationArtifact:
         
         logging.info("Entered initiate_data_transformation of DataTransformation Class")
-        processed_train_path = os.path.join(PROCESSED_FOLDER, TRAIN_FILE_NAME)
-        processed_test_path = os.path.join(PROCESSED_FOLDER,TEST_FILE_NAME)
+        processed_train_path = self.data_transformation_config.processed_train_path
+        #os.path.join(PROCESSED_FOLDER, TRAIN_FILE_NAME)
+        processed_test_path = self.data_transformation_config.processed_test_path
+        #os.path.join(PROCESSED_FOLDER,TEST_FILE_NAME)
 
         os.makedirs(processed_train_path, exist_ok=True)
         os.makedirs(processed_test_path, exist_ok=True)
@@ -71,5 +73,6 @@ class DataTransformation:
                                     processed_test_path)
         
         logging.info("Exited initiate_data_transformation of DataTransformation Class")
+        return DataTransformationArtifact(processed_train_path=processed_train_path, proceseed_test_path=processed_test_path)
         
     

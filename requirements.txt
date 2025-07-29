@@ -29,3 +29,5 @@ from_root
 dotenv
 
 kaggle
+
+mlflow==2.9.2

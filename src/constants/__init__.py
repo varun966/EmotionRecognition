@@ -35,7 +35,20 @@ DATA_VALIDATION_REPORT_FILE_NAME: str = "report.yaml"
 SCHEMA_FILE_PATH = os.path.join("config", "schema.yaml")
 
 
-PROCESSED_FOLDER = from_root('data/processed')
+PROCESSED_FOLDER ='processed'
+
+# MobileNet Training Constants
+MOBILE_IMG_SHAPE = (224,224,3)
+MOBILE_DROP_LAYERS = -5
+MOBILE_TRAINABLE_LAYERS = 70
+MOBILE_EPOCHS = 30
+MOBILE_VERBOSE = 1
+MOBILE_BATCH_SIZE = 16
+
+
+SAVED_MODEL_PATH = from_root('models')
+
+
 
 
 

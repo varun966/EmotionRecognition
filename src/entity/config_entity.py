@@ -32,7 +32,18 @@ class DataValidationConfig:
 
 @dataclass
 class DataTransformationConfig:
-    data_transformation_dir: str = os.path.join(training_pipleine_config.data_dir, )
+    data_transformation_dir: str = os.path.join(training_pipleine_config.data_dir,PROCESSED_FOLDER )
+    processed_train_path: str = os.path.join(data_transformation_dir, TRAIN_FILE_NAME)
+    processed_test_path: str = os.path.join(data_transformation_dir, TEST_FILE_NAME)
+
+@dataclass
+class ModelTrainerConfig:
+    interim_model_path: str = os.path.join(SAVED_MODEL_PATH, 'interim')
+
+@dataclass
+class ModelEvaluationConfig:
+    trained_model_path: str = os.path.join(SAVED_MODEL_PATH,'trained')
+    archive_model_path: str = os.path.join(SAVED_MODEL_PATH, 'archive')
 
 
 

@@ -11,3 +11,17 @@ class DataValidationArtifact:
     validation_status: bool
     message: str 
     #validation_report_file_name: str 
+
+@dataclass
+class DataTransformationArtifact:
+    processed_train_path: str
+    proceseed_test_path: str
+
+@dataclass
+class ModelTrainerArtifact:
+    interim_model_path: str
+
+@dataclass 
+class ModelEvaluationArtifact:
+    trained_model_path: str 
+    evaluation_report_file: str 
