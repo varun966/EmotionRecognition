@@ -23,6 +23,8 @@ def error_message_detail(error: Exception, error_detail: sys) -> str:
     # Log the error for better tracking 
     logging.error(error_message)
 
+    return error_message
+
 class MyException(Exception):
     """
     Custom Exception class for Handling errors in our Script
