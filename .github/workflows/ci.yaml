@@ -30,6 +30,8 @@ jobs:
       - name: run pipeline
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          KAGGLE_USERNAME: ${{secrets.KAGGLE_USERNAME}}
+          KAGGLE_KEY: ${{secrets.KAGGLE_KEY}}
         run: |
           dvc repro
 
