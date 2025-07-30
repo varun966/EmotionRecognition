@@ -15,8 +15,10 @@ load_dotenv()
 dagshub.init(
     repo_owner="varun966",
     repo_name="EmotionRecognition",
-    mlflow=True
+    mlflow=True,
+    token=os.getenv("DAGSHUB_TOKEN")
 )
+
 
 os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_TOKEN")
 os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN")
