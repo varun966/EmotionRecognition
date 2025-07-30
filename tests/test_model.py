@@ -12,16 +12,17 @@ import random
 # Load .env and init DagsHub (from your _init_dagshub function)
 load_dotenv()
 
-dagshub.init(
-    repo_owner="varun966",
-    repo_name="EmotionRecognition",
-    mlflow=True,
-    token=os.getenv("DAGSHUB_TOKEN")
-)
+
 
 
 os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_TOKEN")
 os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN")
+
+dagshub.init(
+    repo_owner="varun966",
+    repo_name="EmotionRecognition",
+    mlflow=True
+)
 
 class TestEmotionModel(unittest.TestCase):
 
