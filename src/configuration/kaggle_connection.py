@@ -21,8 +21,8 @@ class KaggleClient:
 
             if KaggleClient.client is None:
                 # Read from environment variables (set locally or via GitHub secrets)
-                os.environ["KAGGLE_USERNAME"] = os.getenv(KAGGLE_URL_KEY)
-                os.environ["KAGGLE_KEY"] = os.getenv(KAGGLE_KEY)
+                os.environ["KAGGLE_USERNAME"] = os.getenv("KAGGLE_USERNAME")
+                os.environ["KAGGLE_KEY"] = os.getenv("KAGGLE_KEY")
 
                 # Import after setting env vars so Kaggle API picks them up
                 from kaggle.api.kaggle_api_extended import KaggleApi
