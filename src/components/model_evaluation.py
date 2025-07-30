@@ -127,7 +127,7 @@ class ModelEvaluation:
             logging.error('Error occurred while saving the model info: %s', e)
             raise
 
-    def initiate_model_evaluation(self):
+    def initiate_model_evaluation(self)->ModelEvaluationArtifact:
 
         logging.info("Initiated Model Evaluation Component.")
 
@@ -165,6 +165,8 @@ class ModelEvaluation:
 
                 # Log the metrics file to MLflow
                 mlflow.log_artifact(local_path='reports/mobile_metrics.json')
+            
+                return ModelEvaluationArtifact(saved_model_info_path='reports', saved_metrics_path='reports')
 
             except Exception as e:
                 raise MyException(e, sys) from e

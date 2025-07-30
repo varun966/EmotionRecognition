@@ -59,7 +59,7 @@ class DataTransformation:
 
     
 
-    def initiate_data_transformation(self): #->DataTransformationArtifact:
+    def initiate_data_transformation(self)->DataTransformationArtifact:
         
         logging.info("Entered initiate_data_transformation of DataTransformation Class")
         processed_train_path = self.data_transformation_config.processed_train_path

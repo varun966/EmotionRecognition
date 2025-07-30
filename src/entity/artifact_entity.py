@@ -23,5 +23,5 @@ class ModelTrainerArtifact:
 
 @dataclass 
 class ModelEvaluationArtifact:
-    trained_model_path: str 
-    evaluation_report_file: str 
+    saved_model_info_path: str 
+    saved_metrics_path: str 

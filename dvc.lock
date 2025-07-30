@@ -1,0 +1,117 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python pipelines/stage_01_data_ingestion.py
+    deps:
+    - path: pipelines/stage_01_data_ingestion.py
+      hash: md5
+      md5: 752709229d5920055144c83bde8bc727
+      size: 313
+    - path: src/components/data_ingestion.py
+      hash: md5
+      md5: 27395a4e4afd3151f580b6855bee006a
+      size: 2408
+    outs:
+    - path: artifacts/data_ingestion.pkl
+      hash: md5
+      md5: a4579e0faa270107dbeec461b5790979
+      size: 290
+  validate:
+    cmd: python pipelines/stage_02_data_validation.py
+    deps:
+    - path: artifacts/data_ingestion.pkl
+      hash: md5
+      md5: a4579e0faa270107dbeec461b5790979
+      size: 290
+    - path: pipelines/stage_02_data_validation.py
+      hash: md5
+      md5: 573af528dec89424eda1f2082df8ef4a
+      size: 500
+    - path: src/components/data_validation.py
+      hash: md5
+      md5: 2390d288fc47aa2b8b61bdb323916c58
+      size: 6220
+    outs:
+    - path: artifacts/data_validation.pkl
+      hash: md5
+      md5: 1fa2caf8b7f41ea6055b2ac567ee4746
+      size: 137
+  transform:
+    cmd: python pipelines/stage_03_data_transformation.py
+    deps:
+    - path: artifacts/data_ingestion.pkl
+      hash: md5
+      md5: a4579e0faa270107dbeec461b5790979
+      size: 290
+    - path: artifacts/data_validation.pkl
+      hash: md5
+      md5: 1fa2caf8b7f41ea6055b2ac567ee4746
+      size: 137
+    - path: pipelines/stage_03_data_transformation.py
+      hash: md5
+      md5: 9a2abbf444c7ddb0a38b4b6f9d528be5
+      size: 675
+    - path: src/components/data_transformation.py
+      hash: md5
+      md5: 25c735787be367e551eb5e66615ce4fb
+      size: 3842
+    outs:
+    - path: artifacts/data_transformation.pkl
+      hash: md5
+      md5: d066f94e37fe77e3f1a0b9899a33de07
+      size: 232
+  train:
+    cmd: python pipelines/stage_04_model_trainer.py
+    deps:
+    - path: artifacts/data_transformation.pkl
+      hash: md5
+      md5: d066f94e37fe77e3f1a0b9899a33de07
+      size: 232
+    - path: pipelines/stage_04_model_trainer.py
+      hash: md5
+      md5: fbf5f91b16726168f2ca3cbc21c63c58
+      size: 508
+    - path: src/components/model_trainer.py
+      hash: md5
+      md5: 429722ebab42075ba3b63f1420baf9c5
+      size: 6955
+    outs:
+    - path: artifacts/model_trainer.pkl
+      hash: md5
+      md5: 1d40611029397befddc493d48cbad145
+      size: 138
+  evaluate:
+    cmd: python pipelines/stage_05_model_evaluation.py
+    deps:
+    - path: artifacts/model_trainer.pkl
+      hash: md5
+      md5: 1d40611029397befddc493d48cbad145
+      size: 138
+    - path: pipelines/stage_05_model_evaluation.py
+      hash: md5
+      md5: 08a80c130a1313ffe0d56cef762d8c83
+      size: 530
+    - path: src/components/model_evaluation.py
+      hash: md5
+      md5: a6fff18fe6fdb5a180a81c8aca67d613
+      size: 6646
+    outs:
+    - path: artifacts/model_evaluation.pkl
+      hash: md5
+      md5: 4aee99489714aed4bbe7261724a697c4
+      size: 134
+  register:
+    cmd: python pipelines/stage_06_register_model.py
+    deps:
+    - path: artifacts/model_evaluation.pkl
+      hash: md5
+      md5: 4aee99489714aed4bbe7261724a697c4
+      size: 134
+    - path: pipelines/stage_06_register_model.py
+      hash: md5
+      md5: 99c3d766f24145f0d8c0e853558fd7f3
+      size: 396
+    - path: src/components/register_model.py
+      hash: md5
+      md5: 1ba2afb4cbe544ce45882dc8ca348e51
+      size: 3470

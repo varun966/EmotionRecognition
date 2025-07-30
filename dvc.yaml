@@ -1,0 +1,52 @@
+stages:
+  ingest:
+    cmd: python pipelines/stage_01_data_ingestion.py
+    deps:
+      - pipelines/stage_01_data_ingestion.py
+      - src/components/data_ingestion.py
+    outs:
+      - artifacts/data_ingestion.pkl
+
+  validate:
+    cmd: python pipelines/stage_02_data_validation.py
+    deps:
+      - pipelines/stage_02_data_validation.py
+      - artifacts/data_ingestion.pkl
+      - src/components/data_validation.py
+    outs:
+      - artifacts/data_validation.pkl
+
+  transform:
+    cmd: python pipelines/stage_03_data_transformation.py
+    deps:
+      - pipelines/stage_03_data_transformation.py
+      - artifacts/data_ingestion.pkl
+      - artifacts/data_validation.pkl
+      - src/components/data_transformation.py
+    outs:
+      - artifacts/data_transformation.pkl
+
+  train:
+    cmd: python pipelines/stage_04_model_trainer.py
+    deps:
+      - pipelines/stage_04_model_trainer.py
+      - artifacts/data_transformation.pkl
+      - src/components/model_trainer.py
+    outs:
+      - artifacts/model_trainer.pkl
+
+  evaluate:
+    cmd: python pipelines/stage_05_model_evaluation.py
+    deps:
+      - pipelines/stage_05_model_evaluation.py
+      - artifacts/model_trainer.pkl
+      - src/components/model_evaluation.py
+    outs:
+      - artifacts/model_evaluation.pkl
+
+  register:
+    cmd: python pipelines/stage_06_register_model.py
+    deps:
+      - pipelines/stage_06_register_model.py
+      - src/components/register_model.py
+      - artifacts/model_evaluation.pkl

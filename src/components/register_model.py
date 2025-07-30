@@ -7,6 +7,7 @@ import dagshub
 from dotenv import load_dotenv
 
 from src.constants import *
+from src.entity.artifact_entity import ModelEvaluationArtifact
 
 import warnings
 warnings.simplefilter("ignore", UserWarning)
@@ -15,8 +16,9 @@ warnings.filterwarnings("ignore")
 
 class RegisterModel:
 
-    def __init__(self):
+    def __init__(self, model_evaluation_artifact: ModelEvaluationArtifact):
         self._init_dagshub()
+        self.model_evaluation_artifact = model_evaluation_artifact
 
     def _init_dagshub(self):
 
@@ -85,9 +87,10 @@ class RegisterModel:
     def initiate_model_registry(self):
 
         try:
-            model_info_path = 'reports/mobile_experiment_info.json'
+
+            model_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/mobile_experiment_info.json'
             model_info = self.load_model_info(model_info_path)
-            print(model_info)
+            print(model_info)   
             
             model_name = "MobileNetV1"
             self.register_model(model_name, model_info)
