@@ -8,6 +8,7 @@ DOT_ENV_PATH = from_root('.env')
 # Kaggle Connection
 DATASET_NAME = "msambare/fer2013"
 DOWNLOAD_PATH = from_root('data/raw')
+os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 DATA_DIR = from_root('data')
 KAGGLE_URL_KEY: str = "KAGGLE_USERNAME"
 KAGGLE_KEY: str = "KAGGLE_KEY"
