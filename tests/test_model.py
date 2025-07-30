@@ -6,17 +6,11 @@ import dagshub
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
-from dotenv import load_dotenv
 import random
 
-# Load .env and init DagsHub (from your _init_dagshub function)
-load_dotenv()
-
-
-
-
-os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_USERNAME")
-os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN")
+# Use env variables only, no dotenv
+os.environ["MLFLOW_TRACKING_URI"] = "https://dagshub.com/varun966/EmotionRecognition.mlflow"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = os.environ.get("DAGSHUB_TOKEN")
 
 dagshub.init(
     repo_owner="varun966",
@@ -28,7 +22,7 @@ class TestEmotionModel(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.model_name = "MobileNetV1"  # change if needed
+        cls.model_name = "MobileNetV1"
         cls.stage = "Staging"
         cls.img_size = (224, 224)
         cls.test_data_dir = "data/processed/test"
@@ -37,7 +31,7 @@ class TestEmotionModel(unittest.TestCase):
         cls.model_uri = cls._get_model_uri(cls.model_name, cls.stage)
         cls.model = mlflow.keras.load_model(cls.model_uri)
 
-        # Get one sample image path
+        # Select one random test image
         cls.image_path, cls.true_label = cls._get_random_image(cls.test_data_dir)
 
     @staticmethod
@@ -67,21 +61,14 @@ class TestEmotionModel(unittest.TestCase):
 
         predictions = self.model.predict(img_array)
 
-        # Check output shape
-        self.assertEqual(predictions.shape, (1, 7), "Expected prediction shape (1, 7)")
-
-        # Check probability sum
-        prob_sum = np.sum(predictions[0])
-        self.assertAlmostEqual(prob_sum, 1.0, places=2, msg="Probabilities should sum close to 1")
-
-        # Check max probability class
-        predicted_class = np.argmax(predictions[0])
-        self.assertTrue(0 <= predicted_class < 7, "Predicted class index out of range")
+        self.assertEqual(predictions.shape, (1, 7))
+        self.assertAlmostEqual(np.sum(predictions[0]), 1.0, places=2)
+        self.assertTrue(0 <= np.argmax(predictions[0]) < 7)
 
     def test_image_loading(self):
-        self.assertTrue(os.path.exists(self.image_path), f"Test image not found: {self.image_path}")
+        self.assertTrue(os.path.exists(self.image_path))
         img = load_img(self.image_path, target_size=self.img_size)
-        self.assertEqual(img.size, self.img_size, "Image not resized correctly")
+        self.assertEqual(img.size, self.img_size)
 
 if __name__ == "__main__":
     unittest.main()
