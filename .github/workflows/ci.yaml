@@ -1,17 +1,25 @@
 name: CI Pipeline
 
-on: push
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - '**/README*'
+  workflow_dispatch:
 
 jobs:
-  project-testing:
+  ci-tests:
+    if: github.event_name == 'push'
+    name: Run Unit Tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: setup python
-        uses: actions/setup-python@v2
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
@@ -23,32 +31,60 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: install dependencies
+      - name: Install dependencies
         run: |
           pip install -r requirements.txt
 
-      - name: run pipeline
-        env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-          KAGGLE_USERNAME: ${{secrets.KAGGLE_USERNAME}}
-          KAGGLE_KEY: ${{secrets.KAGGLE_KEY}}
-        run: |
-          dvc repro
-
-      - name: Run model tests
-        env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      - name: Run model unit tests
         run: |
           python -m unittest tests/test_model.py
 
-      - name: Promote model to production
-        if: success()
-        env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: python scripts/promote_model.py
-
       - name: Run Flask app tests
-        if: success()
+        run: |
+          python -m unittest tests/test_flask_app.py
+
+  training-pipeline:
+    if: github.event_name == 'workflow_dispatch'
+    name: Run DVC Training Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Setup DVC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dvc
+
+      - name: Run DVC pipeline (training)
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: python -m unittest tests/test_flask_app.py
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          dvc pull
+          dvc repro
+
+      - name: Promote model to production
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python scripts/promote_model.py
