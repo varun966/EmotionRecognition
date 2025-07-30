@@ -58,6 +58,7 @@ class ModelEvaluation:
 
         """Initialize DagsHub connection and MLflow tracking"""
         load_dotenv(dotenv_path=DOT_ENV_PATH)
+        dagshub_username = os.getenv("DAGSHUB_USERNAME")
         dagshub_token = os.getenv("DAGSHUB_TOKEN")
         
         if not dagshub_token:
@@ -71,7 +72,7 @@ class ModelEvaluation:
         )
 
             # Set credentials separately
-        os.environ['MLFLOW_TRACKING_USERNAME'] = dagshub_token
+        os.environ['MLFLOW_TRACKING_USERNAME'] = dagshub_username
         os.environ['MLFLOW_TRACKING_PASSWORD'] = dagshub_token
         
         # Verify connection
