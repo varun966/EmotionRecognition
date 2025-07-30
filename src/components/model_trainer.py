@@ -6,6 +6,7 @@ from src.exception import MyException
 from src.entity.config_entity import ModelTrainerConfig
 from src.entity.artifact_entity import DataTransformationArtifact , ModelTrainerArtifact
 from src.constants import *
+from src.utils.main_utils import read_yaml_file
 
 import pandas as pd
 import numpy as np
@@ -46,9 +47,17 @@ class ModelTrainer:
     def __init__(self, data_transformation_artifact:DataTransformationArtifact, model_trainer_config: ModelTrainerConfig):
         self.data_transformation_artifact = data_transformation_artifact
         self.model_trainer_config = model_trainer_config
+        # ---------------------Get Params -------------------
+
+        self.params = read_yaml_file('params.yaml')
+        self.mobile_params = self.params.get("mobile_net_model",{})
+
+
         # -------------------- Callbacks --------------------
         self.lr_schedule = ReduceLROnPlateau(monitor='val_loss', patience=3, factor=0.5, verbose=1)
         self.early_stop = EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True)
+
+
 
     def get_logging_callback(self):
         return LambdaCallback(
@@ -62,20 +71,20 @@ class ModelTrainer:
 
         logging.info("Entered MobileV1 Method of ModelTrainer Class")
         # Load base model
-        base_model = MobileNet(weights='imagenet', input_shape=MOBILE_IMG_SHAPE)
+        base_model = MobileNet(weights='imagenet', input_shape=tuple(self.mobile_params["MOBILE_IMG_SHAPE"]))
         model = Sequential()
 
-        for layer in base_model.layers[:MOBILE_DROP_LAYERS]:
+        for layer in base_model.layers[:self.mobile_params["MOBILE_DROP_LAYERS"]]:
             model.add(layer)
 
-        if MOBILE_TRAINABLE_LAYERS == 0:
+        if self.mobile_params["MOBILE_TRAINABLE_LAYERS"] == 0:
             model.trainable = False
-        elif MOBILE_TRAINABLE_LAYERS == 1:
+        elif self.mobile_params["MOBILE_TRAINABLE_LAYERS"] == 1:
             model.trainable = True
-        elif MOBILE_TRAINABLE_LAYERS < 0:
-            for layer in model.layers[:MOBILE_TRAINABLE_LAYERS]:
+        elif self.mobile_params["MOBILE_TRAINABLE_LAYERS"] < 0:
+            for layer in model.layers[:self.mobile_params["MOBILE_TRAINABLE_LAYERS"]]:
                 layer.trainable = False
-            for layer in model.layers[MOBILE_TRAINABLE_LAYERS:]:
+            for layer in model.layers[self.mobile_params["MOBILE_TRAINABLE_LAYERS"]:]:
                 layer.trainable = True
 
         # Custom Layers 
@@ -100,8 +109,8 @@ class ModelTrainer:
         history = model.fit(
             x=train_generator,
             validation_data=val_generator,
-            epochs=MOBILE_EPOCHS,
-            verbose=MOBILE_VERBOSE,
+            epochs=self.mobile_params["MOBILE_EPOCHS"],
+            verbose=self.mobile_params["MOBILE_VERBOSE"],
             class_weight=class_weights,
             callbacks=[self.lr_schedule, self.early_stop, self.get_logging_callback()]
         )
@@ -143,7 +152,7 @@ class ModelTrainer:
         train_generator = train_datagen.flow_from_directory(
             directory=self.data_transformation_artifact.processed_train_path,
             target_size=(224, 224),
-            batch_size=MOBILE_BATCH_SIZE,
+            batch_size=self.mobile_params["MOBILE_BATCH_SIZE"],
             class_mode='categorical',
             subset='training',
             shuffle=True,
@@ -153,7 +162,7 @@ class ModelTrainer:
         val_generator = val_datagen.flow_from_directory(
             directory=self.data_transformation_artifact.processed_train_path,
             target_size=(224, 224),
-            batch_size=MOBILE_BATCH_SIZE,
+            batch_size=self.mobile_params["MOBILE_BATCH_SIZE"],
             class_mode='categorical',
             subset='validation',
             shuffle=False,

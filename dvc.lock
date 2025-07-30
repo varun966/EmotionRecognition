@@ -93,8 +93,8 @@ stages:
       size: 530
     - path: src/components/model_evaluation.py
       hash: md5
-      md5: a6fff18fe6fdb5a180a81c8aca67d613
-      size: 6646
+      md5: b0650b2940e99f8249364e37ceeacf95
+      size: 6648
     outs:
     - path: artifacts/model_evaluation.pkl
       hash: md5

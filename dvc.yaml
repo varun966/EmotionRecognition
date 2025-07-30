@@ -32,6 +32,8 @@ stages:
       - pipelines/stage_04_model_trainer.py
       - artifacts/data_transformation.pkl
       - src/components/model_trainer.py
+    params:
+      - mobile_net_model
     outs:
       - artifacts/model_trainer.pkl
 

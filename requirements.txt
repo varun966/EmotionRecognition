@@ -31,3 +31,5 @@ dotenv
 kaggle
 
 mlflow==2.9.2
+
+pytest

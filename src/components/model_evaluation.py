@@ -55,6 +55,7 @@ class ModelEvaluation:
 
 
     def _init_dagshub(self):
+
         """Initialize DagsHub connection and MLflow tracking"""
         load_dotenv(dotenv_path=DOT_ENV_PATH)
         dagshub_token = os.getenv("DAGSHUB_TOKEN")

@@ -3,7 +3,7 @@
 import os
 import mlflow
 
-def promote_model():
+def promote_mobile_model():
     # Set up DagsHub credentials for MLflow tracking
     dagshub_token = os.getenv("DAGSHUB_TOKEN")
     if not dagshub_token:
@@ -43,4 +43,4 @@ def promote_model():
     print(f"Model version {latest_version_staging} promoted to Production")
 
 if __name__ == "__main__":
-    promote_model()
+    promote_mobile_model()

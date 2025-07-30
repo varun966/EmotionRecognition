@@ -37,13 +37,7 @@ SCHEMA_FILE_PATH = os.path.join("config", "schema.yaml")
 
 PROCESSED_FOLDER ='processed'
 
-# MobileNet Training Constants
-MOBILE_IMG_SHAPE = (224,224,3)
-MOBILE_DROP_LAYERS = -5
-MOBILE_TRAINABLE_LAYERS = 70
-MOBILE_EPOCHS = 5
-MOBILE_VERBOSE = 1
-MOBILE_BATCH_SIZE = 16
+
 
 
 SAVED_MODEL_PATH = from_root('models')
