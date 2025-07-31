@@ -8,15 +8,21 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import random
 
-# Use env variables only, no dotenv
-os.environ["MLFLOW_TRACKING_URI"] = "https://dagshub.com/varun966/EmotionRecognition.mlflow"
-os.environ["MLFLOW_TRACKING_PASSWORD"] = os.environ.get("DAGSHUB_TOKEN")
+# Set up DagsHub credentials for MLflow tracking
+dagshub_token = os.getenv("DAGSHUB_TOKEN")
+if not dagshub_token:
+    raise EnvironmentError("DAGSHUB_TOKEN environment variable is not set")
 
-dagshub.init(
-    repo_owner="varun966",
-    repo_name="EmotionRecognition",
-    mlflow=True
-)
+os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_token
+os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+
+dagshub_url = "https://dagshub.com"
+repo_owner = "varun966"
+repo_name = "EmotionRecognition"
+
+# Set up MLflow tracking URI
+mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
+
 
 class TestEmotionModel(unittest.TestCase):
 
