@@ -56,27 +56,20 @@ class ModelEvaluation:
 
     def _init_dagshub(self):
 
-        """Initialize DagsHub connection and MLflow tracking"""
-        load_dotenv(dotenv_path=DOT_ENV_PATH)
-        dagshub_username = os.getenv("DAGSHUB_USERNAME")
+        # Set up DagsHub credentials for MLflow tracking
         dagshub_token = os.getenv("DAGSHUB_TOKEN")
-        
         if not dagshub_token:
             raise EnvironmentError("DAGSHUB_TOKEN environment variable is not set")
-        
-        # Modern DagsHub initialization
-        dagshub.init(
-            repo_name="EmotionRecognition",
-            repo_owner="varun966",
-            mlflow=True
-        )
 
-            # Set credentials separately
-        os.environ['MLFLOW_TRACKING_USERNAME'] = dagshub_username
-        os.environ['MLFLOW_TRACKING_PASSWORD'] = dagshub_token
-        
-        # Verify connection
-        logging.info(f"MLflow Tracking URI: {mlflow.get_tracking_uri()}")
+        os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_token
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+
+        dagshub_url = "https://dagshub.com"
+        repo_owner = "varun966"
+        repo_name = "EmotionRecognition"
+
+        # Set up MLflow tracking URI
+        mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
 
     def ImageGenerator(self, process_function, test_path ):
             
