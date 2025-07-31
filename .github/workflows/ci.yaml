@@ -47,6 +47,12 @@ jobs:
         run: |
           python -m unittest tests/test_flask_app.py
 
+      - name: Promote model to production
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python scripts/promote_model.py
+
   training-pipeline:
     if: github.event_name == 'workflow_dispatch'
     name: Run DVC Training Pipeline
