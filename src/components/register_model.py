@@ -90,10 +90,16 @@ class RegisterModel:
 
             model_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/mobile_experiment_info.json'
             model_info = self.load_model_info(model_info_path)
-            print(model_info)   
+            #print(model_info)   
             
             model_name = "MobileNetV1"
             self.register_model(model_name, model_info)
+
+            effnet_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/efficientnet_experiment_info.json'
+            effnet_model_info = self.load_model_info(effnet_info_path)
+
+            effnet_model_name = "EfficientNetEmotionClassifier"
+            self.register_model(effnet_model_name, effnet_model_info)
 
         except Exception as e:
             logging.error('Failed to complete the model registration process: %s', e)

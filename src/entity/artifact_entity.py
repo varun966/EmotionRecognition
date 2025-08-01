@@ -19,7 +19,7 @@ class DataTransformationArtifact:
 
 @dataclass
 class ModelTrainerArtifact:
-    interim_model_path: str
+    model_path: str
 
 @dataclass 
 class ModelEvaluationArtifact:

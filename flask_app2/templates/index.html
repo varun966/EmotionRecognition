@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Emotion Detection</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            text-align: center;
+            padding-top: 30px;
+        }
+
+        #video-stream {
+            border: 4px solid #4CAF50;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .buttons {
+            margin-top: 20px;
+        }
+
+        .buttons button {
+            margin: 0 10px;
+        }
+
+        #current-model {
+            margin-top: 15px;
+            font-size: 1.2em;
+            color: #00ff99;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Real-Time Emotion Detection</h2>
+
+    <div class="buttons">
+        <button onclick="selectModel('mobilenet')">MobileNet</button>
+        <button onclick="selectModel('efficientnet')">EfficientNet</button>
+        <button onclick="selectModel('ensemble')">Ensemble</button>
+    </div>
+
+    <p id="current-model">Currently using: MobileNet</p>
+    <img id="video-stream" src="/video_feed?model=mobilenet" width="720" height="560">
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

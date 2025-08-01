@@ -38,7 +38,7 @@ class DataTransformationConfig:
 
 @dataclass
 class ModelTrainerConfig:
-    interim_model_path: str = os.path.join(SAVED_MODEL_PATH, 'interim')
+    model_path: str = SAVED_MODEL_PATH
 
 @dataclass
 class ModelEvaluationConfig:
