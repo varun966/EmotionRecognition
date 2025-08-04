@@ -163,7 +163,7 @@ class ModelTrainer:
             epochs=self.effnet_params["EFFNET_EPOCHS"],
             verbose=self.effnet_params["EFFNET_VERBOSE"],
             class_weight=class_weights,
-            callbacks=[self.lr_schedule, self.early_stop]
+            callbacks=[self.lr_schedule, self.early_stop, self.get_logging_callback()]
         )
 
         model_save_path = os.path.join(self.model_trainer_config.model_path,'effnet_model_saved_weights.h5')

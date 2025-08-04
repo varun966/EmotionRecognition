@@ -5,6 +5,7 @@ from src.logger import logging
 import os
 import dagshub
 from dotenv import load_dotenv
+from src.utils.main_utils import read_yaml_file
 
 from src.constants import *
 from src.entity.artifact_entity import ModelEvaluationArtifact
@@ -88,18 +89,29 @@ class RegisterModel:
 
         try:
 
-            model_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/mobile_experiment_info.json'
-            model_info = self.load_model_info(model_info_path)
+            logging.info("Entered initiate_model_registry method of the RegisterModel class")
             #print(model_info)   
+
+            params = read_yaml_file('params.yaml')
+            mobile_params = params.get("mobile_net_model",{})
+            effnet_params = params.get("effnet_model",{})
+
+            if mobile_params["TRAIN_MOBILE"] == True:
             
-            model_name = "MobileNetV1"
-            self.register_model(model_name, model_info)
+                model_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/mobile_experiment_info.json'
+                model_info = self.load_model_info(model_info_path)
+                model_name = "MobileNetV1"
+                self.register_model(model_name, model_info)
 
-            effnet_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/efficientnet_experiment_info.json'
-            effnet_model_info = self.load_model_info(effnet_info_path)
+            if effnet_params["TRAIN_EFFNET"] == True:  
 
-            effnet_model_name = "EfficientNetEmotionClassifier"
-            self.register_model(effnet_model_name, effnet_model_info)
+                effnet_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/efficientnet_experiment_info.json'
+                effnet_model_info = self.load_model_info(effnet_info_path)
+
+                effnet_model_name = "EfficientNetEmotionClassifier"
+                self.register_model(effnet_model_name, effnet_model_info)
+
+            logging.info("Exited initiate_model_registry method of the RegisterModel class")
 
         except Exception as e:
             logging.error('Failed to complete the model registration process: %s', e)
