@@ -13,7 +13,7 @@ effnet_model:
   EFFNET_EPOCHS : 50
   EFFNET_VERBOSE : 1
   EFFNET_BATCH_SIZE : 16
-  TRAIN_EFFNET : False
+  TRAIN_EFFNET : True
 
 custom_model:
   CUSTOM_IMG_SHAPE : [96, 96, 1]
