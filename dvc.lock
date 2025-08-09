@@ -73,8 +73,8 @@ stages:
       size: 508
     - path: src/components/model_trainer.py
       hash: md5
-      md5: 1bcbe6c506adf618c5ce4c67ac9606fe
-      size: 10022
+      md5: f10d510d06a8bfd10e32b0bf10ac0829
+      size: 14457
     params:
       params.yaml:
         mobile_net_model:
@@ -106,8 +106,8 @@ stages:
       size: 530
     - path: src/components/model_evaluation.py
       hash: md5
-      md5: dd8448c39d3d3f7580d7d329c0382a95
-      size: 11517
+      md5: 666506802372f948f406a8a2cc937d74
+      size: 14169
     outs:
     - path: artifacts/model_evaluation.pkl
       hash: md5
@@ -126,5 +126,5 @@ stages:
       size: 396
     - path: src/components/register_model.py
       hash: md5
-      md5: 15aeaeb94a2e42b681ce21e1f36b9c6e
-      size: 4372
+      md5: 31b7d1bb43bea32344ac1b54dd2c3cf9
+      size: 4839

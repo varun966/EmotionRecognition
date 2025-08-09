@@ -1,0 +1,15 @@
+artifact_uri: file:///d:/AIML/EmotionRecognition/notebooks/mlruns/0/ef1376deb8ac4e3594c38cd3e9b25a0d/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: ef1376deb8ac4e3594c38cd3e9b25a0d
+run_name: clumsy-stoat-469
+run_uuid: ef1376deb8ac4e3594c38cd3e9b25a0d
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1754531859971
+status: 1
+tags: []
+user_id: varun

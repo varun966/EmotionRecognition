@@ -51,9 +51,12 @@ if __name__ == "__main__":
     params = read_yaml_file('params.yaml')
     mobile_params = params.get("mobile_net_model",{})
     effnet_params = params.get("effnet_model",{})
+    custom_params = params.get("custom_model",{})
 
 
     if mobile_params["TRAIN_MOBILE"] == True:
         promote_model("MobileNetV1")
     if effnet_params["TRAIN_EFFNET"] == True:
         promote_model("EfficientNetEmotionClassifier")
+    if custom_params["TRAIN_CUSTOM"] == True:
+        promote_model("CustomCNNEmotionClassifier")

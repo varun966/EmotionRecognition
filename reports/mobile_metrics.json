@@ -1,5 +1,9 @@
 {
     "accuracy": 0.6510169963778211,
     "test_f1_weighted": 0.6469100691746236,
-    "test_f1_macro": 0.6232447901794106
+    "test_f1_macro": 0.6232447901794106,
+    "FPS": 617.8511678918085,
+    "total_params_in_millions": 3.525063,
+    "trainable_params_in_millions": 3.503175,
+    "non_trianable_params_in_millions": 0.021888
 }

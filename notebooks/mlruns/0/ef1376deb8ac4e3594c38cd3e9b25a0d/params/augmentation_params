@@ -1,0 +1,1 @@
+{'rescale': 0.00392156862745098, 'rotation_range': 15, 'width_shift_range': 0.1, 'height_shift_range': 0.1, 'zoom_range': 0.1, 'shear_range': 0.1, 'horizontal_flip': True, 'fill_mode': 'nearest', 'brightness_range': [0.8, 1.2]}

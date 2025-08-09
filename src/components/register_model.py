@@ -95,6 +95,7 @@ class RegisterModel:
             params = read_yaml_file('params.yaml')
             mobile_params = params.get("mobile_net_model",{})
             effnet_params = params.get("effnet_model",{})
+            customcnn_params = params.get("custom_model",{})
 
             if mobile_params["TRAIN_MOBILE"] == True:
             
@@ -110,6 +111,14 @@ class RegisterModel:
 
                 effnet_model_name = "EfficientNetEmotionClassifier"
                 self.register_model(effnet_model_name, effnet_model_info)
+
+            if customcnn_params["TRAIN_CUSTOM"] == True:
+
+                custom_info_path = f'{self.model_evaluation_artifact.saved_model_info_path}/customcnn_experiment_info.json'
+                custom_model_info = self.load_model_info(custom_info_path)
+
+                custom_model_name = "CustomCNNEmotionClassifier"
+                self.register_model(custom_model_name, custom_model_info)
 
             logging.info("Exited initiate_model_registry method of the RegisterModel class")
 

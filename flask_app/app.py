@@ -36,7 +36,7 @@ def create_app(testing=False):
         model_name = "MobileNetV1"
         def get_latest_model_version(name):
             client = mlflow.MlflowClient()
-            versions = client.get_latest_versions(name, stages=["Staging"]) or client.get_latest_versions(name)
+            versions = client.get_latest_versions(name, stages=["Production"]) or client.get_latest_versions(name)
             return versions[0].version if versions else None
 
         model_version = get_latest_model_version(model_name)

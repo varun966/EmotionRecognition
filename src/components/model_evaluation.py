@@ -6,6 +6,7 @@ import dagshub
 import numpy as np 
 import json
 from dotenv import load_dotenv
+import time
 
 import warnings
 warnings.simplefilter("ignore", UserWarning)
@@ -80,23 +81,48 @@ class ModelEvaluation:
         # Set up MLflow tracking URI
         mlflow.set_tracking_uri(f'{dagshub_url}/{repo_owner}/{repo_name}.mlflow')
 
+
+
+
+
     def ImageGenerator(self, process_function, test_path ):
-            
-        test_batches = ImageDataGenerator(preprocessing_function=process_function).flow_from_directory(
-        directory=test_path,
-        target_size=(224, 224),
-        batch_size=10,
-        shuffle=False
-        )
+
+        if process_function == None:
+            test_batches = ImageDataGenerator(rescale=1./255).flow_from_directory(
+            directory=test_path,
+            target_size=(96, 96),
+            color_mode='grayscale',
+            class_mode='categorical',
+            batch_size=10,
+            shuffle=False
+            )
+
+        else: 
+
+            test_batches = ImageDataGenerator(preprocessing_function=process_function).flow_from_directory(
+            directory=test_path,
+            target_size=(224, 224),
+            batch_size=10,
+            class_mode='categorical',
+            shuffle=False
+            )
         return test_batches
 
     def evaluate_model(self, model, process_function, test_path):
 
-
+        start_time = time.time()
         test_batches = self.ImageGenerator(process_function, test_path)
         test_labels = test_batches.classes
         predictions = model.predict(x=test_batches, verbose=0)
         predicted_labels = np.argmax(predictions, axis=1)
+
+        end_time = time.time()
+        num_images = len(test_labels)
+        fps = num_images / (end_time - start_time)
+        total_params = model.count_params() / 1000000
+        trainable_params = sum(np.prod(v.shape) for v in model.trainable_weights) / 1000000
+        non_trainable_params = sum(np.prod(v.shape) for v in model.non_trainable_weights) / 1000000
+
 
         test_accuracy = accuracy_score(test_labels, predicted_labels)
         test_f1_weighted = f1_score(test_labels, predicted_labels, average='weighted')
@@ -106,6 +132,10 @@ class ModelEvaluation:
         'accuracy': test_accuracy,
         'test_f1_weighted': test_f1_weighted,
         'test_f1_macro': test_f1_macro,
+        'FPS': fps,
+        'total_params_in_millions': total_params,
+        'trainable_params_in_millions': trainable_params,
+        'non_trianable_params_in_millions': non_trainable_params
 
         }
         return metrics_dict
@@ -138,6 +168,7 @@ class ModelEvaluation:
         params = read_yaml_file('params.yaml')
         mobile_params = params.get("mobile_net_model",{})
         effnet_params = params.get("effnet_model",{})
+        customcnn_params = params.get("custom_model",{})
 
         if mobile_params["TRAIN_MOBILE"] == True:
 
@@ -260,12 +291,59 @@ class ModelEvaluation:
                     # Log the metrics file to MLflow
                     mlflow.log_artifact(local_path='reports/efficientnet_metrics.json')
                 
-                    return ModelEvaluationArtifact(saved_model_info_path='reports', saved_metrics_path='reports')
+                #return ModelEvaluationArtifact(saved_model_info_path='reports', saved_metrics_path='reports')
 
                 except Exception as e:
                     raise MyException(e, sys) from e
                 
+
+        if customcnn_params['TRAIN_CUSTOM'] == True:
+
+            mlflow.set_experiment("CustomCNN-Final Run")
+
+            with mlflow.start_run() as run:  # Start an MLflow run
+                try:
+                    logging.info("Starting Evaluation for CustomCNN Model")
+
+                    model_path = "./models/customcnn_model.h5"
+                    test_path = "./data/processed/test"
+
+                    process_function = None
+
+                    model = load_model(model_path)
+                    metrics = self.evaluate_model(model, process_function, test_path )
+
+                    self.save_metrics(metrics, 'reports/customcnn_metrics.json')
+
+                    for metric_name, metric_value in metrics.items():
+                        mlflow.log_metric(metric_name, metric_value)
+
+
+                    mlflow.keras.log_model(
+                        model=model,
+                        artifact_path="customcnn_model",
+                        registered_model_name=None  
+                    )
+
+
+                    # Save model info
+                    self.save_model_info(run.info.run_id, "customcnn_model", 'reports/customcnn_experiment_info.json')
+
+
+                    # Log the metrics file to MLflow
+                    mlflow.log_artifact(local_path='reports/customcnn_metrics.json')
+
+
+                    logging.info("Ending Evaluation for CustomCNN Model")
+
+                except Exception as e:
+                    raise MyException(e, sys) from e
+
+                
         return ModelEvaluationArtifact(saved_model_info_path='reports', saved_metrics_path='reports')
+
+
+      
         
     # using efficient Model 
 

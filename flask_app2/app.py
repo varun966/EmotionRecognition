@@ -45,7 +45,7 @@ import time
 app = Flask(__name__)
 
 # Load models
-mobilenet_model = load_model("./models/interim/mobilenet_model.h5")
+mobilenet_model = load_model("./models/mobilenet_model.h5")
 
 # Rebuild same architecture
 base_model = EfficientNetB0(include_top=False, input_shape=(224, 224, 3), weights='imagenet')
@@ -70,7 +70,7 @@ efficientnet_model.compile(
 )
 
 # Load weights
-efficientnet_model.load_weights("./notebooks/effnet_model_saved_weights.h5")
+efficientnet_model.load_weights("./models/effnet_model_saved_weights.h5")
 
 
 emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise']

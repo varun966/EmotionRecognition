@@ -14,7 +14,7 @@ import tensorflow as tf
 
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.models import load_model, Model
-from tensorflow.keras.layers import Conv2D, MaxPool2D, Flatten, Dense, Dropout, Activation, GlobalAveragePooling2D
+from tensorflow.keras.layers import Conv2D, MaxPool2D, Flatten, Dense, Dropout, Activation, GlobalAveragePooling2D, BatchNormalization, MaxPooling2D
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam, RMSprop
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
@@ -52,6 +52,7 @@ class ModelTrainer:
         self.params = read_yaml_file('params.yaml')
         self.mobile_params = self.params.get("mobile_net_model",{})
         self.effnet_params = self.params.get("effnet_model",{})
+        self.customcnn_params = self.params.get("custom_model",{})
 
 
         # -------------------- Callbacks --------------------
@@ -103,7 +104,9 @@ class ModelTrainer:
         metrics=['accuracy']
         )
 
-        train_generator, val_generator, class_weights = self.ImageGenerator(preprocess_mobile, self.mobile_params["MOBILE_BATCH_SIZE"])
+        target_size = tuple(self.mobile_params["MOBILE_IMG_SHAPE"][:2])
+
+        train_generator, val_generator, class_weights = self.ImageGenerator(preprocess_mobile, self.mobile_params["MOBILE_BATCH_SIZE"], target_size)
 
         logging.info("Initiating MobileNet Model Training")
 
@@ -125,7 +128,7 @@ class ModelTrainer:
         logging.info("Entered EfficientNetB0Model Method of ModelTrainer Class")
         # Load base model
         # Load EfficientNetB0 as base model
-        base_model = EfficientNetB0(weights='imagenet', include_top=False, input_shape=self.effnet_params["EFFNET_IMG_SHAPE"])
+        base_model = EfficientNetB0(weights='imagenet', include_top=False, input_shape=tuple(self.effnet_params["EFFNET_IMG_SHAPE"]))
         base_model.trainable = True
 
         # Build full model with custom head
@@ -154,7 +157,9 @@ class ModelTrainer:
 
         logging.info("Entered train_efficientnet method of ModelTrainer class")
 
-        train_generator, val_generator, class_weights = self.ImageGenerator(preprocess_efficient, self.effnet_params["EFFNET_BATCH_SIZE"])
+        target_size = tuple(self.effnet_params["EFFNET_IMG_SHAPE"][:2])
+
+        train_generator, val_generator, class_weights = self.ImageGenerator(preprocess_efficient, self.effnet_params["EFFNET_BATCH_SIZE"], target_size)
 
         # -------------------- Training --------------------
         history = model.fit(
@@ -171,53 +176,165 @@ class ModelTrainer:
         logging.info("EfficientNet Model Saved in the models data folder.")
         logging.info("Exited train_efficientnet method of ModelTrainer class")
 
+    def train_custom_cnn(self):
 
-    def ImageGenerator(self, image_processor, batch_size):
+        logging.info("Entered train_custom_cnn method of Model Trainer Class")
+
+        input_shape=tuple(self.customcnn_params["CUSTOM_IMG_SHAPE"])
+
+        model = Sequential([
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape, padding='same'),
+        BatchNormalization(),
+        Conv2D(32, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.2),
+
+        Conv2D(64, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        Conv2D(64, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.3),
+
+        Conv2D(128, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        Conv2D(128, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        MaxPooling2D(pool_size=(2, 2)),
+        Dropout(0.4),
+
+        Conv2D(256, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        Conv2D(256, (3, 3), activation='relu', padding='same'),
+        BatchNormalization(),
+        GlobalAveragePooling2D(),
+
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(7, activation='softmax')
+
+         ])
+
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+             # Log model summary parameter count
+        trainable_params = np.sum([np.prod(v.get_shape()) for v in model.trainable_weights])
+        target_size = tuple(self.customcnn_params["CUSTOM_IMG_SHAPE"][:2])
+
+        train_generator, val_generator, class_weights = self.ImageGenerator(None, self.customcnn_params["CUSTOM_BATCH_SIZE"], target_size)
+
+        model.fit(
+        train_generator,
+        validation_data=val_generator,
+        epochs=self.customcnn_params["CUSTOM_EPOCHS"],
+        verbose=self.customcnn_params["CUSTOM_VERBOSE"],
+        class_weight=class_weights,
+        callbacks=[self.lr_schedule, self.early_stop, self.get_logging_callback()]
+        )
+
+        model_save_path = os.path.join(self.model_trainer_config.model_path,'customcnn_model.h5')
+        model.save(model_save_path)
+
+        logging.info("Exited train_custom_cnn method of Model Trainer Class")
+
+
+    def ImageGenerator(self, image_processor, batch_size, target_size):
 
         logging.info("Entered ImageGenerator Method of ModelTrainer Class.")
-        augmentation_params = {        # Move to constants in future
-            "rotation_range": 10,
-            "zoom_range": [0.1, 1.2],
+        # augmentation_params = {        # Move to constants in future
+        #     "rotation_range": 10,
+        #     "zoom_range": [0.1, 1.2],
+        #     "width_shift_range": 0.1,
+        #     "height_shift_range": 0.1,
+        #     "shear_range": 0.1,
+        #     "horizontal_flip": True,
+        #     "fill_mode": 'nearest',
+        #     "brightness_range": [0.8, 1.2],
+        #     "channel_shift_range": 30.0
+        # }
+
+        augmentation_params = {
+            "rotation_range": 15,
             "width_shift_range": 0.1,
             "height_shift_range": 0.1,
+            "zoom_range": 0.1,
             "shear_range": 0.1,
             "horizontal_flip": True,
             "fill_mode": 'nearest',
-            "brightness_range": [0.8, 1.2],
-            "channel_shift_range": 30.0
+            "brightness_range": [0.8, 1.2]
         }
 
-        train_datagen = ImageDataGenerator(
-            preprocessing_function=image_processor,
-            validation_split=0.2,
-            **augmentation_params
-        )
+        if image_processor == None:
 
-        val_datagen = ImageDataGenerator(
-            preprocessing_function=image_processor,
-            validation_split=0.2
-        )
+            train_datagen = ImageDataGenerator(
+                rescale = 1./255,
+                validation_split = 0.2,
+                **augmentation_params
+            )
 
-        train_generator = train_datagen.flow_from_directory(
+            val_datagen = ImageDataGenerator(
+                rescale = 1./255,
+                validation_split = 0.2
+            )
+
+
+            train_generator = train_datagen.flow_from_directory(
             directory=self.data_transformation_artifact.processed_train_path,
-            target_size=(224, 224),
+            target_size=target_size,
             batch_size=batch_size,
             class_mode='categorical',
+            color_mode='grayscale',
             subset='training',
             shuffle=True,
             seed=42
-        )
+             )
 
-        val_generator = val_datagen.flow_from_directory(
+            val_generator = val_datagen.flow_from_directory(
             directory=self.data_transformation_artifact.processed_train_path,
-            target_size=(224, 224),
+            target_size=target_size,
             batch_size=batch_size,
             class_mode='categorical',
+            color_mode='grayscale',
             subset='validation',
             shuffle=False,
             seed=42
-        )
-        print(train_generator.classes)
+            )
+        
+        else:
+
+            train_datagen = ImageDataGenerator(
+                preprocessing_function=image_processor,
+                validation_split=0.2,
+                **augmentation_params
+            )
+
+            val_datagen = ImageDataGenerator(
+                preprocessing_function=image_processor,
+                validation_split=0.2
+            )
+
+            train_generator = train_datagen.flow_from_directory(
+                directory=self.data_transformation_artifact.processed_train_path,
+                target_size=target_size,
+                batch_size=batch_size,
+                class_mode='categorical',
+                subset='training',
+                shuffle=True,
+                seed=42
+            )
+
+            val_generator = val_datagen.flow_from_directory(
+                directory=self.data_transformation_artifact.processed_train_path,
+                target_size=target_size,
+                batch_size=batch_size,
+                class_mode='categorical',
+                subset='validation',
+                shuffle=False,
+                seed=42
+            )
+            
+        #print(train_generator.classes)
         class_weights = class_weight.compute_class_weight(
         class_weight='balanced',
         classes=np.unique(train_generator.classes), y=train_generator.classes)
@@ -239,6 +356,9 @@ class ModelTrainer:
         if self.effnet_params["TRAIN_EFFNET"] == True:
             effnet_model = self.EfficientNetB0Model()
             self.train_efficientnet(effnet_model)
+
+        if self.customcnn_params["TRAIN_CUSTOM"] == True:
+            self.train_custom_cnn()
 
 
         logging.info("Exited initiate_model_training of ModelTrainer Class.")
