@@ -27,8 +27,8 @@ def promote_model(model_name):
 
     #model_name = "MobileNetV1"
     # Get the latest version in staging
-    #latest_version_staging = client.get_latest_versions(model_name, stages=["Staging"])[0].version
-    latest_version_staging = client.get_latest_versions(model_name)[0].version
+    latest_version_staging = client.get_latest_versions(model_name, stages=["Staging"])[0].version
+    #latest_version_staging = client.get_latest_versions(model_name)[0].version
 
     # Archive the current production model
     prod_versions = client.get_latest_versions(model_name, stages=["Production"])
