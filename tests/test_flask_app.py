@@ -1,7 +1,7 @@
 # test/test_flask_app.py
 
 import pytest
-from flask3.app import create_app
+from flask4.app import create_app
 
 @pytest.fixture
 def client():

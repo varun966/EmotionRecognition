@@ -1,0 +1,19 @@
+artifact_path: efficientnet_emotion_model
+flavors:
+  python_function:
+    artifacts:
+      model_path:
+        path: artifacts\effnet_weights_temp.h5
+        uri: models\effnet_weights_temp.h5
+    cloudpickle_version: 3.1.1
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pyfunc.model
+    python_model: python_model.pkl
+    python_version: 3.9.23
+mlflow_version: 2.9.2
+model_size_bytes: 17391240
+model_uuid: 583c9ed636dd42d69ac9f09a7a8b545e
+run_id: eb5bef1e63854a50a11c08bcde021f92
+utc_time_created: '2025-08-09 07:14:59.801453'

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Live Emotion Detection</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main>
+    <h1>Live Emotion Detection</h1>
+
+    <section id="controls">
+      <div class="btn-row">
+        <button onclick="selectModel('mobilenet')">MobileNet</button>
+        <button onclick="selectModel('efficientnet')">EfficientNet</button>
+        <button onclick="selectModel('customcnn')">CustomCNN</button>
+      </div>
+
+      <div class="ensemble-row">
+        <label>Ensemble Model 1:
+          <select id="model1">
+            <option value="mobilenet">MobileNet</option>
+            <option value="efficientnet">EfficientNet</option>
+            <option value="customcnn">CustomCNN</option>
+          </select>
+        </label>
+
+        <label>Ensemble Model 2:
+          <select id="model2">
+            <option value="mobilenet">MobileNet</option>
+            <option value="efficientnet">EfficientNet</option>
+            <option value="customcnn">CustomCNN</option>
+          </select>
+        </label>
+
+        <button onclick="selectEnsemble()">Run Ensemble</button>
+      </div>
+
+      <p id="current-model">Currently using: MobileNet</p>
+
+      <button id="toggle-camera" onclick="toggleCamera()">Stop Camera</button>
+    </section>
+
+    <section id="stream">
+      <!-- NEW: this <video> is only to capture frames; can be hidden -->
+      <video id="cam" autoplay playsinline muted class="capture-preview"></video>
+
+      <!-- Unchanged: server-annotated MJPEG stream -->
+      <img id="video-stream" src="{{ url_for('video_feed', model='mobilenet') }}" alt="Video stream">
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

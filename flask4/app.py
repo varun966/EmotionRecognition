@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, Response, request
+from flask import Flask, render_template, Response, request, jsonify
 import cv2
 import numpy as np
 from tensorflow.keras.applications.mobilenet import preprocess_input as preprocess_mobile
@@ -17,6 +17,23 @@ import tempfile
 import traceback
 from pathlib import Path
 import pandas as pd
+
+# ---- NEW: imports for browser-frame upload path ----
+import base64
+import threading
+
+# ---- NEW: global, thread-safe latest-frame buffer ----
+_latest_frame = {"img": None, "lock": threading.Lock()}
+
+def _set_latest_frame(img_bgr: np.ndarray):
+    with _latest_frame["lock"]:
+        _latest_frame["img"] = img_bgr
+
+def _get_latest_frame():
+    with _latest_frame["lock"]:
+        if _latest_frame["img"] is None:
+            return None
+        return _latest_frame["img"].copy()
 
 def create_app(testing=False):
     app = Flask(__name__)
@@ -83,7 +100,6 @@ def create_app(testing=False):
                         preds = np.asarray(preds)
                         return preds
                     except Exception as e2:
-                        # Print both exceptions so debugging is possible
                         print(f"[ERROR] model.predict failed first attempt: {e1}")
                         print(f"[ERROR] model.predict failed fallback to DataFrame: {e2}")
                         raise
@@ -97,9 +113,7 @@ def create_app(testing=False):
             if not ver:
                 raise RuntimeError(f"No model versions found for registered model: {model_name}")
             uri = f"models:/{model_name}/{ver}"
-            # try keras loader first (works if model was logged as keras)
             try:
-                # Some mlflow installations expose mlflow.keras; if not, AttributeError will be raised
                 m = mlflow.keras.load_model(uri)
                 print(f"[INFO] Loaded {model_name} via mlflow.keras.load_model()")
                 return m
@@ -130,15 +144,13 @@ def create_app(testing=False):
         print('Loaded CustomCNN Model')
 
         # -----------------------
-        # EfficientNet: fetch weights artifact from model registry run, rebuild exact architecture, load weights
+        # EfficientNet: rebuild architecture and load weights from artifacts
         # -----------------------
         def build_custom_efficientnet(weights_path):
-            # Base EfficientNetB0
             EFFNET_IMG_SHAPE = (224,224,3)
             base_model = EfficientNetB0(weights=None, include_top=False, input_shape=EFFNET_IMG_SHAPE)
             base_model.trainable = True
 
-            # Custom head (your exact structure)
             x = base_model.output
             x = GlobalAveragePooling2D(name='global_avg_pool')(x)
             x = Dropout(0.4, name='dropout_x')(x)
@@ -147,18 +159,9 @@ def create_app(testing=False):
             outputs = Dense(7, activation='softmax', name='output', dtype='float32')(x)
 
             model = Model(inputs=base_model.input, outputs=outputs)
-
-            # Compile model
-            model.compile(
-                loss='categorical_crossentropy',
-                optimizer=Adam(learning_rate=1e-4),
-                metrics=['accuracy']
-            )
-
-            # Load your pre-trained weights
+            model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=1e-4), metrics=['accuracy'])
             model.load_weights(str(weights_path))
             print(f"[INFO] Weights loaded from {weights_path}")
-
             return model
 
         def load_efficientnet_from_registry(model_name):
@@ -168,20 +171,16 @@ def create_app(testing=False):
                 raise RuntimeError(f"No versions found in registry for {model_name}")
             version = versions[0].version
 
-            # Save locally
             local_dir = Path(__file__).parent / "models" / f"{model_name}_v{version}"
             local_dir.mkdir(parents=True, exist_ok=True)
 
-            # Download all artifacts for this model version to local_dir
             artifacts_path = mlflow.artifacts.download_artifacts(
                 artifact_uri=f"models:/{model_name}/{version}",
                 dst_path=str(local_dir)
             )
 
-            # Robust search for .h5 weights (the exact path may vary depending on how you logged artifacts)
             h5_candidates = list(local_dir.rglob("*.h5"))
             if not h5_candidates:
-                # Also try common names
                 possible_names = [
                     local_dir / "artifacts" / "effnet_weights_temp.h5",
                     local_dir / "effnet_weights_temp.h5",
@@ -194,7 +193,6 @@ def create_app(testing=False):
                         found = p
                         break
                 if not found:
-                    # If still not found, raise with helpful debug info
                     listing = [str(p) for p in local_dir.rglob("*")]
                     raise FileNotFoundError(f"Weights file not found under {local_dir}. Files found: {listing}")
                 weights_path = found
@@ -297,7 +295,6 @@ def create_app(testing=False):
                             continue
                         p = predict_fn(arr)
                         p = np.asarray(p)
-                        # normalize shapes: make sure p is (batch, classes)
                         if p.ndim == 1:
                             p = np.expand_dims(p, axis=0)
                         preds_list.append(p)
@@ -305,14 +302,12 @@ def create_app(testing=False):
                         return "Unknown", None
                     preds = np.mean(np.array(preds_list), axis=0)
 
-                # convert preds shape to (batch, classes) then take argmax for first sample
                 preds = np.asarray(preds)
                 if preds.ndim == 2:
                     predicted_index = int(np.argmax(preds[0]))
                 elif preds.ndim == 1:
                     predicted_index = int(np.argmax(preds))
                 else:
-                    # fallback: flatten
                     predicted_index = int(np.argmax(preds.reshape(-1)))
                 predicted_label = emotion_labels[predicted_index]
                 return predicted_label, preds
@@ -324,63 +319,66 @@ def create_app(testing=False):
 
         # -----------------------
         # Frame generator & streaming
+        # (NOW reads frames uploaded by browser instead of cv2.VideoCapture)
         # -----------------------
         def generate_frames_stream(model_query):
-            cap = cv2.VideoCapture(0)           # open camera
-            # warm up
+            # FPS calc
             time_start = time.time()
             frames = 0
             fps = 0.0
 
-            try:
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
+            while True:
+                frame = _get_latest_frame()
 
-                    frame = cv2.flip(frame, 1)
-                    gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                # If no frame yet, show a placeholder
+                if frame is None:
+                    placeholder = np.zeros((360, 640, 3), dtype=np.uint8)
+                    cv2.putText(placeholder, "Waiting for browser camera...",
+                                (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                    # encode and yield placeholder then loop again
+                    ret2, buffer = cv2.imencode('.jpg', placeholder)
+                    if ret2:
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                    time.sleep(0.05)  # small wait
+                    continue
 
-                    faces = face_cascade.detectMultiScale(gray_full, scaleFactor=1.3, minNeighbors=5)
+                gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray_full, scaleFactor=1.3, minNeighbors=5)
 
-                    for (x, y, w, h) in faces:
-                        # handle boundary safety
-                        x1, y1 = max(0, x), max(0, y)
-                        x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
-                        face_crop = gray_full[y1:y2, x1:x2]
-                        if face_crop.size == 0:
-                            continue
-
-                        # protect prediction so a single model error doesn't kill the stream
-                        try:
-                            label, _ = predict_emotion(face_crop, model_query)
-                        except Exception as e:
-                            print(f"[WARN] prediction failed for a face: {e}")
-                            label = "Unknown"
-
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        cv2.putText(frame, label, (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-
-                    # compute lightweight FPS every second
-                    frames += 1
-                    elapsed = time.time() - time_start
-                    if elapsed >= 1.0:
-                        fps = frames / elapsed
-                        frames = 0
-                        time_start = time.time()
-                    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
-                    # encode and yield
-                    ret2, buffer = cv2.imencode('.jpg', frame)
-                    if not ret2:
+                for (x, y, w, h) in faces:
+                    x1, y1 = max(0, x), max(0, y)
+                    x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
+                    face_crop = gray_full[y1:y2, x1:x2]
+                    if face_crop.size == 0:
                         continue
-                    frame_bytes = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            finally:
-                cap.release()
+
+                    try:
+                        label, _ = predict_emotion(face_crop, model_query)
+                    except Exception as e:
+                        print(f"[WARN] prediction failed for a face: {e}")
+                        label = "Unknown"
+
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+                # compute lightweight FPS every second
+                frames += 1
+                elapsed = time.time() - time_start
+                if elapsed >= 1.0:
+                    fps = frames / elapsed
+                    frames = 0
+                    time_start = time.time()
+                cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+                ret2, buffer = cv2.imencode('.jpg', frame)
+                if not ret2:
+                    continue
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
         # -----------------------
         # Routes
@@ -403,9 +401,39 @@ def create_app(testing=False):
             return Response(generate_frames_stream(model_query),
                             mimetype='multipart/x-mixed-replace; boundary=frame')
 
+        # ---- NEW: browser uploads JPEG frames here ----
+        @app.route('/upload_frame', methods=['POST'])
+        def upload_frame():
+            """
+            Expects JSON: { "image": "data:image/jpeg;base64,...." }
+            Optionally you can send raw base64 without a prefix; both are handled.
+            """
+            data = request.get_json(silent=True)
+            if not data or "image" not in data:
+                return jsonify({"ok": False, "error": "missing image"}), 400
+
+            img_str = data["image"]
+            # Strip data URL header if present
+            if "," in img_str:
+                img_str = img_str.split(",", 1)[1]
+            try:
+                jpg = base64.b64decode(img_str)
+                arr = np.frombuffer(jpg, dtype=np.uint8)
+                frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame is None:
+                    return jsonify({"ok": False, "error": "decode failed"}), 400
+
+                _set_latest_frame(frame)
+
+                 # ✅ DEBUG LINE
+                print("[DEBUG] Received frame from browser")
+                
+                return jsonify({"ok": True})
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
+
     return app
 
 if __name__ == "__main__":
     app = create_app()
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
-

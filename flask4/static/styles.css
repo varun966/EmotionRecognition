@@ -1,0 +1,29 @@
+/* static/styles.css */
+body {
+  background: #0f172a;
+  color: #e6edf3;
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 20px;
+}
+main { max-width: 900px; margin: 0 auto; text-align: center; }
+h1 { color: #7ee787; margin-bottom: 12px; }
+#controls { margin-bottom: 12px; }
+.btn-row button, .ensemble-row button {
+  margin: 6px; padding: 8px 12px; border-radius: 6px; border: none;
+  background: #1f2937; color: white; cursor: pointer;
+}
+.btn-row button:hover, .ensemble-row button:hover { background: #334155; }
+#video-stream { width: 720px; max-width: 100%; border-radius: 8px; border: 4px solid #1f2937; }
+label { margin: 0 8px; color: #cbd5e1; }
+select { padding: 6px; border-radius: 4px; }
+#current-model { margin-top: 8px; color: #94f1b8; }
+
+/* NEW: small capture preview; set display:none if you don't want to show it */
+.capture-preview {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  position: absolute;
+  pointer-events: none;
+}

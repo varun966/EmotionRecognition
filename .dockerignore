@@ -1,0 +1,22 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore virtual envs
+.venv/
+venv/
+env/
+
+# Ignore data/models if not needed for build
+*.csv
+*.h5
+*.pt
+*.onnx
+*.pkl
+models/
+data/
+
+# Git stuff
+.git/
+.gitignore
