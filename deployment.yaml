@@ -5,7 +5,10 @@ metadata:
   labels:
     app: flask-app
 spec:
-  replicas: 1   # t3.small: keep 1 replica to minimize cost/OOM risk
+  replicas: 1                       # single small node -> 1 replica
+  progressDeadlineSeconds: 1800     # allow long model warm-up
+  strategy:
+    type: Recreate                  # avoid surge on t3.small
   selector:
     matchLabels:
       app: flask-app
@@ -16,7 +19,8 @@ spec:
     spec:
       containers:
       - name: flask-app
-        image: 179743358508.dkr.ecr.us-east-1.amazonaws.com/emotionrecognition-app:latest
+        image: REPLACED_BY_CI:latest        # CI will set the real image/tag
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
         resources:
@@ -26,11 +30,24 @@ spec:
           limits:
             memory: "1200Mi"
             cpu: "1"
+        # give the app time to load TF models
+        startupProbe:
+          httpGet: { path: "/", port: 5000 }
+          periodSeconds: 10
+          failureThreshold: 90               # ~15 minutes
+        readinessProbe:
+          httpGet: { path: "/", port: 5000 }
+          initialDelaySeconds: 25
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: { path: "/", port: 5000 }
+          initialDelaySeconds: 40
+          periodSeconds: 20
         env:
         - name: DAGSHUB_TOKEN
           valueFrom:
             secretKeyRef:
-              name: dagshub-secret
+              name: dagshub-secret          # CI creates this Secret
               key: DAGSHUB_TOKEN
         - name: FLASK_ENV
           value: "production"
@@ -46,5 +63,5 @@ spec:
   ports:
     - name: http
       protocol: TCP
-      port: 5000        # external LB port
-      targetPort: 5000  # container port
+      port: 5000
+      targetPort: 5000
