@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: flask-app
-        image: REPLACED_BY_CI:latest        # CI will set the real image/tag
+        image: REPLACED_BY_CI:latest        # CI sets the real image/tag right after apply
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
@@ -30,11 +30,10 @@ spec:
           limits:
             memory: "1200Mi"
             cpu: "1"
-        # give the app time to load TF models
-        startupProbe:
+        startupProbe:                       # give the app time to load TF models
           httpGet: { path: "/", port: 5000 }
           periodSeconds: 10
-          failureThreshold: 90               # ~15 minutes
+          failureThreshold: 90              # ~15 minutes
         readinessProbe:
           httpGet: { path: "/", port: 5000 }
           initialDelaySeconds: 25
@@ -47,7 +46,7 @@ spec:
         - name: DAGSHUB_TOKEN
           valueFrom:
             secretKeyRef:
-              name: dagshub-secret          # CI creates this Secret
+              name: dagshub-secret          # <-- using dagshub-secret
               key: DAGSHUB_TOKEN
         - name: FLASK_ENV
           value: "production"
