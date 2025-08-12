@@ -33,7 +33,7 @@ EXPOSE 5000
 
 # --------- Default (dev) entrypoint ----------
 # Runs Flask directly (fine for testing / small loads)
-CMD ["python", "app.py"]
+#CMD ["python", "app.py"]
 
 # =========================
 # Production (optional)
@@ -43,8 +43,7 @@ CMD ["python", "app.py"]
 # RUN pip install --no-cache-dir gunicorn
 #
 # 2) Switch CMD to Gunicorn (uses your factory create_app()):
-# CMD ["gunicorn", "-w", "2", "-k", "gthread", "--threads", "4", \
-#      "--timeout", "120", "--bind", "0.0.0.0:5000", "app:create_app()"]
+CMD ["gunicorn", "-w", "2", "-k", "gthread", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:create_app()"]
 #
 # Notes:
 # - Increase workers/threads for more concurrency if CPU allows.

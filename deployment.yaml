@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-app
+  labels:
+    app: flask-app
+spec:
+  replicas: 1   # t3.small: keep 1 replica to minimize cost/OOM risk
+  selector:
+    matchLabels:
+      app: flask-app
+  template:
+    metadata:
+      labels:
+        app: flask-app
+    spec:
+      containers:
+      - name: flask-app
+        image: 179743358508.dkr.ecr.us-east-1.amazonaws.com/emotionrecognition-app:latest
+        ports:
+        - containerPort: 5000
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "1200Mi"
+            cpu: "1"
+        env:
+        - name: DAGSHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: dagshub-secret
+              key: DAGSHUB_TOKEN
+        - name: FLASK_ENV
+          value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-app-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: flask-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5000        # external LB port
+      targetPort: 5000  # container port
