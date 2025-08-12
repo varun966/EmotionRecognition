@@ -11,7 +11,7 @@ on:
 jobs:
   ci-tests:
     if: github.event_name == 'push'
-    name: Run Unit Tests
+    name: Test, Build, and Deploy
     runs-on: ubuntu-latest
 
     steps:
@@ -32,69 +32,74 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run model unit tests
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python -m unittest tests/test_model.py
+        run: python -m unittest tests/test_model.py
 
       - name: Run Flask app tests
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python -m unittest tests/test_flask_app.py
+        run: python -m unittest tests/test_flask_app.py
 
       - name: Promote model to production
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: python scripts/promote_model.py
+
+      # ---- AWS auth for ECR + EKS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      # ---- Ensure ECR repo exists
+      - name: Ensure ECR repository
         run: |
-          python scripts/promote_model.py
+          aws ecr describe-repositories --repository-names "${{ secrets.ECR_REPOSITORY }}" \
+          || aws ecr create-repository --repository-name "${{ secrets.ECR_REPOSITORY }}"
 
-      - name: Login to AWS ECR
-        if: success()
+      # ---- Login to ECR
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ---- Build and push image (tag with commit SHA and latest)
+      - name: Build & push Docker image
+        env:
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}
         run: |
-            aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            aws configure set region ${{ secrets.AWS_REGION }}
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          docker build -t "$IMAGE_URI:latest" -t "$IMAGE_URI:${{ github.sha }}" .
+          docker push "$IMAGE_URI:${{ github.sha }}"
+          docker push "$IMAGE_URI:latest"
 
-      - name: Build Docker image
-        run: |
-            docker build -t ${{ secrets.ECR_REPOSITORY }}:latest .
-
-      - name: Tag Docker image
-        run: |
-            docker tag ${{ secrets.ECR_REPOSITORY }}:latest \
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
-
-    
-      - name: Check Docker Authentication
-        run: docker info
-
-      - name: Push Docker image to ECR
-        run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
-
+      # ---- kubectl
       - name: Set Up kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
-      
+
       - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --region us-east-1 --name flask-app-cluster
+        run: aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name flask-app-cluster
 
-      - name: Create Kubernetes Secret
+      # ---- Secret must match deployment.yaml (capstone-secret with key DAGSHUB_TOKEN)
+      - name: Create/Update Kubernetes Secret
         run: |
-          kubectl create secret generic dagshub-secret \
-            --from-literal=DAGSHUB_TOKEN=${{ secrets.DAGSHUB_TOKEN }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic capstone-secret \
+            --from-literal=DAGSHUB_TOKEN='${{ secrets.DAGSHUB_TOKEN }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
 
+      # ---- Apply manifests and roll out the image built in this run
       - name: Deploy to EKS
+        env:
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}
         run: |
           kubectl apply -f deployment.yaml
+          kubectl set image deployment/flask-app flask-app="$IMAGE_URI:${{ github.sha }}"
+          kubectl rollout status deployment/flask-app
 
   training-pipeline:
     if: github.event_name == 'workflow_dispatch'
@@ -119,8 +124,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Setup DVC
         run: |
@@ -139,5 +143,4 @@ jobs:
       - name: Promote model to production
         env:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python scripts/promote_model.py
+        run: python scripts/promote_model.py
