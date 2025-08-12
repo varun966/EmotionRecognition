@@ -7,23 +7,33 @@ on:
       - '**/*.md'
       - '**/README*'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to EKS? (true/false)'
+        required: false
+        default: 'false'
+
+env:
+  REGION: ${{ secrets.AWS_REGION }}
+  ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
 
 jobs:
-  ci-tests:
-    name: Test, Build, and Deploy
+  ci-build-deploy:
+    name: Test, Build, and (optionally) Deploy
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Cache pip dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
@@ -50,19 +60,35 @@ jobs:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: python scripts/promote_model.py
 
-      # --- AWS creds for ECR + EKS ---
+      # --- Decide whether to deploy (repo variable DEPLOY_TO_EKS or manual input) ---
+      - name: Decide deploy
+        id: decide
+        env:
+          VAR_DEPLOY: ${{ vars.DEPLOY_TO_EKS }}
+          INPUT_DEPLOY: ${{ github.event.inputs.deploy }}
+        run: |
+          DEPLOY=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${INPUT_DEPLOY}" = "true" ]; then
+            DEPLOY=true
+          elif [ "${VAR_DEPLOY}" = "true" ]; then
+            DEPLOY=true
+          fi
+          echo "deploy=${DEPLOY}" >> $GITHUB_OUTPUT
+          echo "Will deploy? ${DEPLOY}"
+
+      # --- AWS creds for ECR (+ optional EKS later) ---
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ env.REGION }}
 
       # --- Ensure ECR repo exists (region-aware) ---
       - name: Ensure ECR repository
         run: |
-          aws ecr describe-repositories --region "${{ secrets.AWS_REGION }}" --repository-names "${{ secrets.ECR_REPOSITORY }}" \
-          || aws ecr create-repository --region "${{ secrets.AWS_REGION }}" --repository-name "${{ secrets.ECR_REPOSITORY }}"
+          aws ecr describe-repositories --region "${REGION}" --repository-names "${ECR_REPOSITORY}" \
+          || aws ecr create-repository --region "${REGION}" --repository-name "${ECR_REPOSITORY}"
 
       # --- Login to ECR ---
       - name: Login to ECR
@@ -71,23 +97,41 @@ jobs:
       # --- Build & push image (tag with SHA and latest) ---
       - name: Build & push Docker image
         env:
-          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}
+          IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
           docker build -t "$IMAGE_URI:latest" -t "$IMAGE_URI:${{ github.sha }}" .
           docker push "$IMAGE_URI:${{ github.sha }}"
           docker push "$IMAGE_URI:latest"
 
-      # --- kubectl setup and kubeconfig ---
+      # --- Stop here if no deploy requested ---
+      - name: Skip deploy note
+        if: steps.decide.outputs.deploy != 'true'
+        run: echo "Deployment skipped (set repo Variable DEPLOY_TO_EKS=true or run workflow_dispatch with deploy=true)."
+
+      # --- kubectl setup and kubeconfig (only if deploying) ---
       - name: Set Up kubectl
-        uses: azure/setup-kubectl@v3
+        if: steps.decide.outputs.deploy == 'true'
+        uses: azure/setup-kubectl@v4
         with:
           version: 'v1.31.0'   # matches your EKS 1.31 control plane
 
+      - name: Check if EKS cluster exists
+        id: has_cluster
+        if: steps.decide.outputs.deploy == 'true'
+        run: |
+          if aws eks describe-cluster --name "flask-app-cluster" --region "${REGION}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name flask-app-cluster
+        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
+        run: aws eks update-kubeconfig --region "${{ env.REGION }}" --name flask-app-cluster
 
       # --- Create/Update Secret expected by deployment.yaml (dagshub-secret) ---
       - name: Create/Update Kubernetes Secret
+        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
         run: |
           kubectl create secret generic dagshub-secret \
             --from-literal=DAGSHUB_TOKEN='${{ secrets.DAGSHUB_TOKEN }}' \
@@ -95,12 +139,20 @@ jobs:
 
       # --- Apply manifests, set image to this commit, wait for rollout ---
       - name: Deploy to EKS
+        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
         env:
-          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}
+          IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
           kubectl apply -f deployment.yaml
           kubectl set image deployment/flask-app flask-app="$IMAGE_URI:${{ github.sha }}"
           kubectl rollout status deployment/flask-app --timeout=20m
+
+      # --- Graceful skip if cluster missing ---
+      - name: Cluster missing – skip deploy without failing
+        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists != 'true'
+        run: |
+          echo "EKS cluster 'flask-app-cluster' not found in ${REGION}. Skipping deployment."
+          exit 0
 
   training-pipeline:
     if: github.event_name == 'workflow_dispatch'
@@ -109,15 +161,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Cache pip dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
