@@ -193,18 +193,21 @@ jobs:
 
       - name: Wait for ELB hostname
         id: elb
+        shell: bash
         run: |
-          for i in {1..60}; do
-            ELB=$(kubectl get svc "${SERVICE_NAME}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            if [ -n "$ELB" ]; then
-              echo "elb=$ELB" >> $GITHUB_OUTPUT
-              echo "ELB: $ELB"
-              break
+          for attempt in $(seq 1 60); do
+            host=$(kubectl get svc "${SERVICE_NAME}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null | tr -d '[:space:]')
+            if [[ -n "$host" ]]; then
+              echo "elb=$host" >> "$GITHUB_OUTPUT"
+              echo "ELB: $host"
+              exit 0
             fi
-            echo "Waiting for ELB hostname..."
+            echo "Waiting for ELB hostname... ($attempt/60)"
             sleep 10
           done
-          [ -z "$ELB" ] && { echo "ELB hostname not available"; exit 1; }
+          echo "ELB hostname not available after waiting." >&2
+          exit 1
+
 
       - name: Install jq
         run: |
