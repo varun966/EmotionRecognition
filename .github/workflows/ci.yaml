@@ -27,10 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
-    outputs:
-      cf_id:     ${{ steps.cf.outputs.cf_id }}
-      cf_domain: ${{ steps.cf.outputs.cf_domain }}
-
     steps:
       # ----- Test phase -----
       - name: Checkout
@@ -77,6 +73,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.REGION }}
 
+      - name: Who am I (AWS)?
+        run: aws sts get-caller-identity
+
       - name: Ensure ECR repo exists
         run: |
           if ! aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" >/dev/null 2>&1; then
@@ -98,9 +97,9 @@ jobs:
           docker push "$IMAGE_URI:latest"
 
       # ----- Create ephemeral EKS + deploy -----
-      - name: Install eksctl
+      - name: Install eksctl (pinned)
         run: |
-          curl -sSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" -o eksctl.tgz
+          curl -sSL https://github.com/eksctl-io/eksctl/releases/download/v0.212.0/eksctl_$(uname -s)_amd64.tar.gz -o eksctl.tgz
           sudo tar -xzf eksctl.tgz -C /usr/local/bin eksctl
           eksctl version
 
@@ -136,7 +135,7 @@ jobs:
         env:
           IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
-          cat > deployment.yaml <<EOF
+          cat > deployment.yaml <<'EOF'
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -188,26 +187,33 @@ jobs:
                 targetPort: 5000
           EOF
 
-          kubectl apply -f deployment.yaml
-          kubectl rollout status deployment/${APP_NAME} --timeout=15m
+          # expand vars inside heredoc
+          envsubst < deployment.yaml > deployment.expanded.yaml
+          kubectl apply -f deployment.expanded.yaml
+          kubectl rollout status deployment/${APP_NAME} --timeout=20m
 
       - name: Wait for ELB hostname
         id: elb
         shell: bash
         run: |
-          for attempt in $(seq 1 60); do
+          for attempt in $(seq 1 90); do
             host=$(kubectl get svc "${SERVICE_NAME}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null | tr -d '[:space:]')
             if [[ -n "$host" ]]; then
               echo "elb=$host" >> "$GITHUB_OUTPUT"
               echo "ELB: $host"
               exit 0
             fi
-            echo "Waiting for ELB hostname... ($attempt/60)"
+            if (( attempt % 10 == 0 )); then
+              echo "--- svc describe (attempt $attempt) ---"
+              kubectl describe svc "${SERVICE_NAME}" || true
+              echo "--- events ---"
+              kubectl get events --sort-by=.lastTimestamp | tail -n 50 || true
+            fi
+            echo "Waiting for ELB hostname... ($attempt/90)"
             sleep 10
           done
           echo "ELB hostname not available after waiting." >&2
           exit 1
-
 
       - name: Install jq
         run: |
@@ -282,13 +288,8 @@ jobs:
           CF_ID=$(jq -r '.Distribution.Id' cf-create.json)
           CF_DOMAIN=$(jq -r '.Distribution.DomainName' cf-create.json)
 
-          echo "Waiting for CloudFront to deploy..."
-          for i in {1..120}; do
-            STATUS=$(aws cloudfront get-distribution --id "$CF_ID" --query 'Distribution.Status' --output text)
-            echo "Status: $STATUS"
-            [ "$STATUS" = "Deployed" ] && break
-            sleep 10
-          done
+          # Built-in waiter is simpler & reliable
+          aws cloudfront wait distribution-deployed --id "$CF_ID"
 
           echo "cf_id=$CF_ID"       >> $GITHUB_OUTPUT
           echo "cf_domain=$CF_DOMAIN" >> $GITHUB_OUTPUT
@@ -299,48 +300,39 @@ jobs:
           echo "### Live app URL" >> $GITHUB_STEP_SUMMARY
           echo "https://${{ steps.cf.outputs.cf_domain }}/" >> $GITHUB_STEP_SUMMARY
 
-      - name: Save teardown hints
-        run: |
-          echo "CLUSTER_NAME=${CLUSTER_NAME}" >> $GITHUB_ENV
-          echo "ECR_REPOSITORY=${ECR_REPOSITORY}" >> $GITHUB_ENV
-          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_ENV
-          echo "APP_NAME=${APP_NAME}" >> $GITHUB_ENV
-
       # ----- TTL before teardown -----
       - name: Sleep 10 minutes (TTL)
         run: sleep 600
 
-      # ----- Teardown everything -----
+      # ===== TEARDOWN (run even on failures) =====
       - name: Disable & delete CloudFront
-        if: steps.cf.outputs.cf_id != ''
+        if: always() && steps.cf.outputs.cf_id != ''
         run: |
           CF_ID="${{ steps.cf.outputs.cf_id }}"
           aws cloudfront get-distribution-config --id "$CF_ID" > cfconf.json
           ETAG=$(jq -r '.ETag' cfconf.json)
           jq '.DistributionConfig.Enabled=false | .DistributionConfig' cfconf.json > cfupd.json
           aws cloudfront update-distribution --id "$CF_ID" --if-match "$ETAG" --distribution-config file://cfupd.json >/dev/null
-          # wait for disabled state to deploy
-          for i in {1..60}; do
-            ST=$(aws cloudfront get-distribution --id "$CF_ID" --query 'Distribution.Status' --output text)
-            [ "$ST" = "Deployed" ] && break
-            sleep 10
-          done
+          aws cloudfront wait distribution-deployed --id "$CF_ID"
           NEWETAG=$(aws cloudfront get-distribution-config --id "$CF_ID" --query ETag --output text)
           aws cloudfront delete-distribution --id "$CF_ID" --if-match "$NEWETAG" >/dev/null || true
           echo "Deleted CloudFront $CF_ID"
 
       - name: Delete K8s Service & Deployment
+        if: always()
         continue-on-error: true
         run: |
           kubectl delete service  "${SERVICE_NAME}" --ignore-not-found
           kubectl delete deployment "${APP_NAME}"   --ignore-not-found
 
       - name: Delete EKS cluster
+        if: always()
         continue-on-error: true
         run: |
           eksctl delete cluster --name "${CLUSTER_NAME}" --region "${REGION}" --wait
 
       - name: Delete ephemeral ECR repo (and images)
+        if: always()
         continue-on-error: true
         env:
           REPO: ${{ env.ECR_REPOSITORY }}
@@ -369,6 +361,7 @@ jobs:
           fi
 
       - name: Sanity (what remains)
+        if: always()
         continue-on-error: true
         run: |
           echo "[EKS]" && aws eks list-clusters
