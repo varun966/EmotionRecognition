@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI (tests → build → ephemeral deploy with URL → auto-destroy)
 
 on:
   push:
@@ -6,25 +6,34 @@ on:
     paths-ignore:
       - '**/*.md'
       - '**/README*'
-  workflow_dispatch:
-    inputs:
-      deploy:
-        description: 'Deploy to EKS? (true/false)'
-        required: false
-        default: 'false'
+
+concurrency:
+  group: ci-ephemeral
+  cancel-in-progress: true
 
 env:
-  REGION: ${{ secrets.AWS_REGION }}
-  ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  REGION:       ${{ secrets.AWS_REGION }}
+  ACCOUNT_ID:   ${{ secrets.AWS_ACCOUNT_ID }}
+
+  # Unique, run-scoped names so nothing collides and everything can be torn down safely
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}-ephem-${{ github.run_id }}
+  CLUSTER_NAME:   flask-app-ephem-${{ github.run_id }}
+  APP_NAME:       flask-app-ephem
+  SERVICE_NAME:   flask-app-service-ephem
+  K8S_NAMESPACE:  default
 
 jobs:
-  ci-build-deploy:
-    name: Test, Build, and (optionally) Deploy
+  ci-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    outputs:
+      cf_id:     ${{ steps.cf.outputs.cf_id }}
+      cf_domain: ${{ steps.cf.outputs.cf_domain }}
 
     steps:
-      - name: Checkout code
+      # ----- Test phase -----
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -32,7 +41,7 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Cache pip dependencies
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -40,7 +49,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -60,23 +69,7 @@ jobs:
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: python scripts/promote_model.py
 
-      # --- Decide whether to deploy (repo variable DEPLOY_TO_EKS or manual input) ---
-      - name: Decide deploy
-        id: decide
-        env:
-          VAR_DEPLOY: ${{ vars.DEPLOY_TO_EKS }}
-          INPUT_DEPLOY: ${{ github.event.inputs.deploy }}
-        run: |
-          DEPLOY=false
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${INPUT_DEPLOY}" = "true" ]; then
-            DEPLOY=true
-          elif [ "${VAR_DEPLOY}" = "true" ]; then
-            DEPLOY=true
-          fi
-          echo "deploy=${DEPLOY}" >> $GITHUB_OUTPUT
-          echo "Will deploy? ${DEPLOY}"
-
-      # --- AWS creds for ECR (+ optional EKS later) ---
+      # ----- Build & push image -----
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -84,18 +77,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.REGION }}
 
-      # --- Ensure ECR repo exists (region-aware) ---
-      - name: Ensure ECR repository
+      - name: Ensure ECR repo exists
         run: |
-          aws ecr describe-repositories --region "${REGION}" --repository-names "${ECR_REPOSITORY}" \
-          || aws ecr create-repository --region "${REGION}" --repository-name "${ECR_REPOSITORY}"
+          if ! aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" >/dev/null 2>&1; then
+            aws ecr create-repository --repository-name "${ECR_REPOSITORY}" >/dev/null
+            echo "Created ECR repo ${ECR_REPOSITORY}"
+          else
+            echo "ECR repo ${ECR_REPOSITORY} already exists"
+          fi
 
-      # --- Login to ECR ---
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # --- Build & push image (tag with SHA and latest) ---
-      - name: Build & push Docker image
+      - name: Build & push image (latest + SHA)
         env:
           IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
@@ -103,99 +97,277 @@ jobs:
           docker push "$IMAGE_URI:${{ github.sha }}"
           docker push "$IMAGE_URI:latest"
 
-      # --- Stop here if no deploy requested ---
-      - name: Skip deploy note
-        if: steps.decide.outputs.deploy != 'true'
-        run: echo "Deployment skipped (set repo Variable DEPLOY_TO_EKS=true or run workflow_dispatch with deploy=true)."
+      # ----- Create ephemeral EKS + deploy -----
+      - name: Install eksctl
+        run: |
+          curl -sSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" -o eksctl.tgz
+          sudo tar -xzf eksctl.tgz -C /usr/local/bin eksctl
+          eksctl version
 
-      # --- kubectl setup and kubeconfig (only if deploying) ---
-      - name: Set Up kubectl
-        if: steps.decide.outputs.deploy == 'true'
+      - name: Set up kubectl
         uses: azure/setup-kubectl@v4
         with:
-          version: 'v1.31.0'   # matches your EKS 1.31 control plane
+          version: 'v1.31.0'
 
-      - name: Check if EKS cluster exists
-        id: has_cluster
-        if: steps.decide.outputs.deploy == 'true'
+      - name: Create EKS cluster (1× t3.small)
         run: |
-          if aws eks describe-cluster --name "flask-app-cluster" --region "${REGION}" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          eksctl create cluster \
+            --name "${CLUSTER_NAME}" \
+            --region "${REGION}" \
+            --version 1.31 \
+            --nodegroup-name "${APP_NAME}-nodes" \
+            --node-type t3.small \
+            --nodes 1 --nodes-min 1 --nodes-max 1 \
+            --managed \
+            --node-ami-family AmazonLinux2023
 
       - name: Update kubeconfig
-        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --region "${{ env.REGION }}" --name flask-app-cluster
+        run: aws eks update-kubeconfig --region "${{ env.REGION }}" --name "${{ env.CLUSTER_NAME }}"
 
-      # --- Create/Update Secret expected by deployment.yaml (dagshub-secret) ---
-      - name: Create/Update Kubernetes Secret
-        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
+      - name: Create/Update Kubernetes Secret (DAGSHUB_TOKEN)
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           kubectl create secret generic dagshub-secret \
-            --from-literal=DAGSHUB_TOKEN='${{ secrets.DAGSHUB_TOKEN }}' \
-            --dry-run=client -o yaml | kubectl apply -f -
+            --from-literal=DAGSHUB_TOKEN="${DAGSHUB_TOKEN}" \
+            -n "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
-      # --- Apply manifests, set image to this commit, wait for rollout ---
-      - name: Deploy to EKS
-        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists == 'true'
+      - name: Render & apply Kubernetes manifests
         env:
           IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
+          cat > deployment.yaml <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${APP_NAME}
+            labels: { app: ${APP_NAME} }
+          spec:
+            replicas: 1
+            selector: { matchLabels: { app: ${APP_NAME} } }
+            template:
+              metadata: { labels: { app: ${APP_NAME} } }
+              spec:
+                containers:
+                  - name: ${APP_NAME}
+                    image: ${IMAGE_URI}:latest
+                    ports:
+                      - containerPort: 5000
+                    env:
+                      - name: DAGSHUB_TOKEN
+                        valueFrom:
+                          secretKeyRef:
+                            name: dagshub-secret
+                            key: DAGSHUB_TOKEN
+                      - name: FLASK_ENV
+                        value: "production"
+                    resources:
+                      requests: { cpu: "250m", memory: "512Mi" }
+                      limits:   { cpu: "1",    memory: "1200Mi" }
+                    readinessProbe:
+                      httpGet: { path: "/", port: 5000 }
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                    livenessProbe:
+                      httpGet: { path: "/", port: 5000 }
+                      initialDelaySeconds: 45
+                      periodSeconds: 20
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${SERVICE_NAME}
+            labels: { app: ${APP_NAME} }
+          spec:
+            type: LoadBalancer
+            selector: { app: ${APP_NAME} }
+            ports:
+              - name: http
+                protocol: TCP
+                port: 5000
+                targetPort: 5000
+          EOF
+
           kubectl apply -f deployment.yaml
-          kubectl set image deployment/flask-app flask-app="$IMAGE_URI:${{ github.sha }}"
-          kubectl rollout status deployment/flask-app --timeout=20m
+          kubectl rollout status deployment/${APP_NAME} --timeout=15m
 
-      # --- Graceful skip if cluster missing ---
-      - name: Cluster missing – skip deploy without failing
-        if: steps.decide.outputs.deploy == 'true' && steps.has_cluster.outputs.exists != 'true'
+      - name: Wait for ELB hostname
+        id: elb
         run: |
-          echo "EKS cluster 'flask-app-cluster' not found in ${REGION}. Skipping deployment."
-          exit 0
+          for i in {1..60}; do
+            ELB=$(kubectl get svc "${SERVICE_NAME}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -n "$ELB" ]; then
+              echo "elb=$ELB" >> $GITHUB_OUTPUT
+              echo "ELB: $ELB"
+              break
+            fi
+            echo "Waiting for ELB hostname..."
+            sleep 10
+          done
+          [ -z "$ELB" ] && { echo "ELB hostname not available"; exit 1; }
 
-  training-pipeline:
-    if: github.event_name == 'workflow_dispatch'
-    name: Run DVC Training Pipeline
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
+      - name: Install jq
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          sudo apt-get update -y
+          sudo apt-get install -y jq
 
-      - name: Setup DVC
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dvc
-
-      - name: Run DVC pipeline (training)
+      - name: Create CloudFront distribution (HTTPS for camera)
+        id: cf
         env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          ELB_HOST: ${{ steps.elb.outputs.elb }}
         run: |
-          dvc pull
-          dvc repro
+          cat > cf-config.json <<EOF
+          {
+            "CallerReference": "run-${{ github.run_id }}-${{ github.run_attempt }}-$(date +%s)",
+            "Aliases": { "Quantity": 0 },
+            "DefaultRootObject": "",
+            "Origins": {
+              "Quantity": 1,
+              "Items": [
+                {
+                  "Id": "elb-origin",
+                  "DomainName": "${ELB_HOST}",
+                  "OriginPath": "",
+                  "CustomHeaders": { "Quantity": 0 },
+                  "CustomOriginConfig": {
+                    "HTTPPort": 5000,
+                    "HTTPSPort": 443,
+                    "OriginProtocolPolicy": "http-only",
+                    "OriginSslProtocols": { "Quantity": 3, "Items": ["TLSv1","TLSv1.1","TLSv1.2"] },
+                    "OriginReadTimeout": 30,
+                    "OriginKeepaliveTimeout": 5
+                  },
+                  "ConnectionAttempts": 3,
+                  "ConnectionTimeout": 10,
+                  "OriginShield": { "Enabled": false }
+                }
+              ]
+            },
+            "DefaultCacheBehavior": {
+              "TargetOriginId": "elb-origin",
+              "ViewerProtocolPolicy": "redirect-to-https",
+              "AllowedMethods": {
+                "Quantity": 7,
+                "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"],
+                "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] }
+              },
+              "Compress": true,
+              "MinTTL": 0, "DefaultTTL": 0, "MaxTTL": 0,
+              "ForwardedValues": {
+                "QueryString": true,
+                "Cookies": { "Forward": "all" },
+                "Headers": { "Quantity": 0 }
+              },
+              "LambdaFunctionAssociations": { "Quantity": 0 },
+              "FunctionAssociations": { "Quantity": 0 }
+            },
+            "CacheBehaviors": { "Quantity": 0 },
+            "CustomErrorResponses": { "Quantity": 0 },
+            "Comment": "",
+            "Logging": { "Enabled": false, "IncludeCookies": false, "Bucket": "", "Prefix": "" },
+            "PriceClass": "PriceClass_All",
+            "Enabled": true,
+            "ViewerCertificate": { "CloudFrontDefaultCertificate": true },
+            "Restrictions": { "GeoRestriction": { "RestrictionType": "none", "Quantity": 0 } },
+            "HttpVersion": "http2",
+            "IsIPV6Enabled": true
+          }
+          EOF
 
-      - name: Promote model to production
+          CF_CREATE=$(aws cloudfront create-distribution --distribution-config file://cf-config.json)
+          echo "$CF_CREATE" > cf-create.json
+          CF_ID=$(jq -r '.Distribution.Id' cf-create.json)
+          CF_DOMAIN=$(jq -r '.Distribution.DomainName' cf-create.json)
+
+          echo "Waiting for CloudFront to deploy..."
+          for i in {1..120}; do
+            STATUS=$(aws cloudfront get-distribution --id "$CF_ID" --query 'Distribution.Status' --output text)
+            echo "Status: $STATUS"
+            [ "$STATUS" = "Deployed" ] && break
+            sleep 10
+          done
+
+          echo "cf_id=$CF_ID"       >> $GITHUB_OUTPUT
+          echo "cf_domain=$CF_DOMAIN" >> $GITHUB_OUTPUT
+          echo "CloudFront URL: https://$CF_DOMAIN/"
+
+      - name: Publish URL to run summary
+        run: |
+          echo "### Live app URL" >> $GITHUB_STEP_SUMMARY
+          echo "https://${{ steps.cf.outputs.cf_domain }}/" >> $GITHUB_STEP_SUMMARY
+
+      - name: Save teardown hints
+        run: |
+          echo "CLUSTER_NAME=${CLUSTER_NAME}" >> $GITHUB_ENV
+          echo "ECR_REPOSITORY=${ECR_REPOSITORY}" >> $GITHUB_ENV
+          echo "SERVICE_NAME=${SERVICE_NAME}" >> $GITHUB_ENV
+          echo "APP_NAME=${APP_NAME}" >> $GITHUB_ENV
+
+      # ----- TTL before teardown -----
+      - name: Sleep 10 minutes (TTL)
+        run: sleep 600
+
+      # ----- Teardown everything -----
+      - name: Disable & delete CloudFront
+        if: steps.cf.outputs.cf_id != ''
+        run: |
+          CF_ID="${{ steps.cf.outputs.cf_id }}"
+          aws cloudfront get-distribution-config --id "$CF_ID" > cfconf.json
+          ETAG=$(jq -r '.ETag' cfconf.json)
+          jq '.DistributionConfig.Enabled=false | .DistributionConfig' cfconf.json > cfupd.json
+          aws cloudfront update-distribution --id "$CF_ID" --if-match "$ETAG" --distribution-config file://cfupd.json >/dev/null
+          # wait for disabled state to deploy
+          for i in {1..60}; do
+            ST=$(aws cloudfront get-distribution --id "$CF_ID" --query 'Distribution.Status' --output text)
+            [ "$ST" = "Deployed" ] && break
+            sleep 10
+          done
+          NEWETAG=$(aws cloudfront get-distribution-config --id "$CF_ID" --query ETag --output text)
+          aws cloudfront delete-distribution --id "$CF_ID" --if-match "$NEWETAG" >/dev/null || true
+          echo "Deleted CloudFront $CF_ID"
+
+      - name: Delete K8s Service & Deployment
+        continue-on-error: true
+        run: |
+          kubectl delete service  "${SERVICE_NAME}" --ignore-not-found
+          kubectl delete deployment "${APP_NAME}"   --ignore-not-found
+
+      - name: Delete EKS cluster
+        continue-on-error: true
+        run: |
+          eksctl delete cluster --name "${CLUSTER_NAME}" --region "${REGION}" --wait
+
+      - name: Delete ephemeral ECR repo (and images)
+        continue-on-error: true
         env:
-          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: python scripts/promote_model.py
+          REPO: ${{ env.ECR_REPOSITORY }}
+        run: |
+          if aws ecr describe-repositories --repository-names "$REPO" >/dev/null 2>&1; then
+            NEXT=""
+            while :; do
+              if [ -n "$NEXT" ]; then
+                OUT=$(aws ecr list-images --repository-name "$REPO" --filter tagStatus=ANY --max-results 1000 --output json --next-token "$NEXT")
+              else
+                OUT=$(aws ecr list-images --repository-name "$REPO" --filter tagStatus=ANY --max-results 1000 --output json)
+              fi
+              IDS=$(echo "$OUT" | jq '.imageIds')
+              COUNT=$(echo "$IDS" | jq 'length')
+              if [ "$COUNT" -gt 0 ]; then
+                echo "$IDS" > ids.json
+                aws ecr batch-delete-image --repository-name "$REPO" --image-ids file://ids.json >/dev/null || true
+              fi
+              NEXT=$(echo "$OUT" | jq -r '.nextToken // empty')
+              [ -z "$NEXT" ] && break
+            done
+            aws ecr delete-repository --repository-name "$REPO" --force >/dev/null || true
+            echo "Deleted ECR repo $REPO"
+          else
+            echo "ECR repo $REPO not found"
+          fi
+
+      - name: Sanity (what remains)
+        continue-on-error: true
+        run: |
+          echo "[EKS]" && aws eks list-clusters
+          echo "[ECR]" && aws ecr describe-repositories --query "repositories[].repositoryName" --output table || true
+          echo "[CF ]" && aws cloudfront list-distributions --query "DistributionList.Items[].DomainName" --output table || true
