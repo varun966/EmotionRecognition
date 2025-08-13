@@ -5,10 +5,10 @@ metadata:
   labels:
     app: flask-app
 spec:
-  replicas: 1                       # single small node -> 1 replica
-  progressDeadlineSeconds: 1800     # allow long model warm-up
+  replicas: 1
+  progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate                  # avoid surge on t3.small
+    type: Recreate
   selector:
     matchLabels:
       app: flask-app
@@ -19,21 +19,21 @@ spec:
     spec:
       containers:
       - name: flask-app
-        image: REPLACED_BY_CI:latest        # CI sets the real image/tag right after apply
+        image: REPLACED_BY_CI:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "300m"
+            cpu: "500m"
+            memory: "1Gi"
           limits:
-            memory: "1200Mi"
-            cpu: "1"
-        startupProbe:                       # give the app time to load TF models
+            cpu: "1800m"
+            memory: "2Gi"
+        startupProbe:
           httpGet: { path: "/", port: 5000 }
           periodSeconds: 10
-          failureThreshold: 90              # ~15 minutes
+          failureThreshold: 90
         readinessProbe:
           httpGet: { path: "/", port: 5000 }
           initialDelaySeconds: 25
@@ -46,7 +46,7 @@ spec:
         - name: DAGSHUB_TOKEN
           valueFrom:
             secretKeyRef:
-              name: dagshub-secret          # <-- using dagshub-secret
+              name: dagshub-secret
               key: DAGSHUB_TOKEN
         - name: FLASK_ENV
           value: "production"

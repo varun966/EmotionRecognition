@@ -14,6 +14,8 @@ concurrency:
 env:
   REGION:       ${{ secrets.AWS_REGION }}
   ACCOUNT_ID:   ${{ secrets.AWS_ACCOUNT_ID }}
+  # Instance size — set to t3.small if you want to save cost at the expense of speed
+  NODE_TYPE:    t3.medium
 
   # Unique, run-scoped names so nothing collides and everything can be torn down safely
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}-ephem-${{ github.run_id }}
@@ -108,14 +110,14 @@ jobs:
         with:
           version: 'v1.31.0'
 
-      - name: Create EKS cluster (1× t3.small)
+      - name: Create EKS cluster (1× node)
         run: |
           eksctl create cluster \
             --name "${CLUSTER_NAME}" \
             --region "${REGION}" \
             --version 1.31 \
             --nodegroup-name "${APP_NAME}-nodes" \
-            --node-type t3.small \
+            --node-type "${NODE_TYPE}" \
             --nodes 1 --nodes-min 1 --nodes-max 1 \
             --managed \
             --node-ami-family AmazonLinux2023
@@ -135,7 +137,8 @@ jobs:
         env:
           IMAGE_URI: ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}
         run: |
-          cat > deployment.yaml <<'EOF'
+          # write file with shell expansion (no envsubst dependency)
+          cat > deployment.yaml <<EOF
           apiVersion: apps/v1
           kind: Deployment
           metadata:
@@ -143,6 +146,8 @@ jobs:
             labels: { app: ${APP_NAME} }
           spec:
             replicas: 1
+            progressDeadlineSeconds: 1800
+            strategy: { type: Recreate }
             selector: { matchLabels: { app: ${APP_NAME} } }
             template:
               metadata: { labels: { app: ${APP_NAME} } }
@@ -150,8 +155,23 @@ jobs:
                 containers:
                   - name: ${APP_NAME}
                     image: ${IMAGE_URI}:latest
-                    ports:
-                      - containerPort: 5000
+                    imagePullPolicy: IfNotPresent
+                    ports: [ { containerPort: 5000 } ]
+                    resources:
+                      requests: { cpu: "500m", memory: "1Gi" }
+                      limits:   { cpu: "1800m", memory: "2Gi" }
+                    startupProbe:
+                      httpGet: { path: "/", port: 5000 }
+                      periodSeconds: 10
+                      failureThreshold: 90
+                    readinessProbe:
+                      httpGet: { path: "/", port: 5000 }
+                      initialDelaySeconds: 25
+                      periodSeconds: 10
+                    livenessProbe:
+                      httpGet: { path: "/", port: 5000 }
+                      initialDelaySeconds: 40
+                      periodSeconds: 20
                     env:
                       - name: DAGSHUB_TOKEN
                         valueFrom:
@@ -160,17 +180,6 @@ jobs:
                             key: DAGSHUB_TOKEN
                       - name: FLASK_ENV
                         value: "production"
-                    resources:
-                      requests: { cpu: "250m", memory: "512Mi" }
-                      limits:   { cpu: "1",    memory: "1200Mi" }
-                    readinessProbe:
-                      httpGet: { path: "/", port: 5000 }
-                      initialDelaySeconds: 30
-                      periodSeconds: 10
-                    livenessProbe:
-                      httpGet: { path: "/", port: 5000 }
-                      initialDelaySeconds: 45
-                      periodSeconds: 20
           ---
           apiVersion: v1
           kind: Service
@@ -187,9 +196,7 @@ jobs:
                 targetPort: 5000
           EOF
 
-          # expand vars inside heredoc
-          envsubst < deployment.yaml > deployment.expanded.yaml
-          kubectl apply -f deployment.expanded.yaml
+          kubectl apply -f deployment.yaml
           kubectl rollout status deployment/${APP_NAME} --timeout=20m
 
       - name: Wait for ELB hostname
@@ -288,10 +295,9 @@ jobs:
           CF_ID=$(jq -r '.Distribution.Id' cf-create.json)
           CF_DOMAIN=$(jq -r '.Distribution.DomainName' cf-create.json)
 
-          # Built-in waiter is simpler & reliable
           aws cloudfront wait distribution-deployed --id "$CF_ID"
 
-          echo "cf_id=$CF_ID"       >> $GITHUB_OUTPUT
+          echo "cf_id=$CF_ID"         >> $GITHUB_OUTPUT
           echo "cf_domain=$CF_DOMAIN" >> $GITHUB_OUTPUT
           echo "CloudFront URL: https://$CF_DOMAIN/"
 
