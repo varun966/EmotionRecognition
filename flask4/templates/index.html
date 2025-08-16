@@ -43,12 +43,26 @@
     </section>
 
     <section id="stream">
-      <!-- NEW: this <video> is only to capture frames; can be hidden -->
+      <!-- this <video> is only to capture frames; kept hidden via CSS -->
       <video id="cam" autoplay playsinline muted class="capture-preview"></video>
 
-      <!-- Unchanged: server-annotated MJPEG stream -->
+      <!-- Server-annotated MJPEG stream -->
       <img id="video-stream" src="{{ url_for('video_feed', model='mobilenet') }}" alt="Video stream">
     </section>
+
+    <!-- NEW: Overall Emotion (added) -->
+    <section id="overall">
+      <h2>Overall Emotion</h2>
+      <p id="overall-top" class="stat">—</p>
+      <table id="overall-table">
+        <thead>
+          <tr><th>Label</th><th>Count</th><th>%</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <button id="reset-overall">Reset Overall</button>
+    </section>
+    <!-- END new block -->
   </main>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>

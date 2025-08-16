@@ -21,6 +21,7 @@ import pandas as pd
 # ---- NEW: imports for browser-frame upload path ----
 import base64
 import threading
+from collections import Counter  # NEW
 
 # ---- NEW: global, thread-safe latest-frame buffer ----
 _latest_frame = {"img": None, "lock": threading.Lock()}
@@ -34,6 +35,32 @@ def _get_latest_frame():
         if _latest_frame["img"] is None:
             return None
         return _latest_frame["img"].copy()
+
+# ---- NEW: global, thread-safe overall emotion counters ----
+_overall = {"counts": Counter(), "total": 0, "lock": threading.Lock()}
+
+def _overall_increment(label: str):
+    if label and label != "Unknown":
+        with _overall["lock"]:
+            _overall["counts"][label] += 1
+            _overall["total"] += 1
+
+def _overall_get():
+    with _overall["lock"]:
+        total = _overall["total"]
+        counts = dict(_overall["counts"])
+    if total > 0 and counts:
+        top_label = max(counts, key=counts.get)
+        top_pct = (counts[top_label] / total) * 100.0
+    else:
+        top_label, top_pct = "—", 0.0
+    return top_label, top_pct, total, counts
+
+def _overall_reset():
+    with _overall["lock"]:
+        _overall["counts"].clear()
+        _overall["total"] = 0
+
 
 def create_app(testing=False):
     app = Flask(__name__)
@@ -147,7 +174,7 @@ def create_app(testing=False):
         # EfficientNet: rebuild architecture and load weights from artifacts
         # -----------------------
         def build_custom_efficientnet(weights_path):
-            EFFNET_IMG_SHAPE = (224,224,3)
+            EFFNET_IMG_SHAPE = (224, 224, 3)
             base_model = EfficientNetB0(weights=None, include_top=False, input_shape=EFFNET_IMG_SHAPE)
             base_model.trainable = True
 
@@ -359,6 +386,10 @@ def create_app(testing=False):
                         print(f"[WARN] prediction failed for a face: {e}")
                         label = "Unknown"
 
+                    # ---- NEW: keep running counts for 'overall'
+                    if label != "Unknown":
+                        _overall_increment(label)
+
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(frame, label, (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
@@ -372,6 +403,11 @@ def create_app(testing=False):
                     time_start = time.time()
                 cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+                # ---- NEW: draw overall on the stream
+                top_label, top_pct, tot, _ = _overall_get()
+                cv2.putText(frame, f"Overall: {top_label} {top_pct:.0f}% (n={tot})", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
                 ret2, buffer = cv2.imencode('.jpg', frame)
                 if not ret2:
@@ -401,7 +437,7 @@ def create_app(testing=False):
             return Response(generate_frames_stream(model_query),
                             mimetype='multipart/x-mixed-replace; boundary=frame')
 
-        # ---- NEW: browser uploads JPEG frames here ----
+        # ---- browser uploads JPEG frames here ----
         @app.route('/upload_frame', methods=['POST'])
         def upload_frame():
             """
@@ -425,14 +461,32 @@ def create_app(testing=False):
 
                 _set_latest_frame(frame)
 
-                 # ✅ DEBUG LINE
+                # ✅ DEBUG LINE
                 print("[DEBUG] Received frame from browser")
-                
+
                 return jsonify({"ok": True})
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 400
 
+        # ---- NEW: overall emotion JSON + reset endpoints ----
+        @app.route('/overall_json')
+        def overall_json():
+            top, pct, total, counts = _overall_get()
+            # ensure consistent label order
+            summary = []
+            for lab in emotion_labels:
+                c = counts.get(lab, 0)
+                p = (c / total * 100.0) if total > 0 else 0.0
+                summary.append({"label": lab, "count": c, "pct": round(p, 1)})
+            return jsonify({"top": top, "top_pct": round(pct, 1), "total": total, "summary": summary})
+
+        @app.route('/reset_overall', methods=['POST'])
+        def reset_overall():
+            _overall_reset()
+            return jsonify({"ok": True})
+
     return app
+
 
 if __name__ == "__main__":
     app = create_app()

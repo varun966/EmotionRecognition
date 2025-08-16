@@ -1,12 +1,17 @@
 // static/script.js
 let cameraRunning = true;
 
-// --- NEW: capture & upload state ---
+// --- capture & upload state ---
 let mediaStream = null;
 let sendIntervalId = null;
 let canvas = null;
 let ctx = null;
 const targetFps = 10; // ~10 FPS upload to server
+
+// NEW: handles for overall UI
+const overallTopEl = document.getElementById('overall-top');
+const overallTableBody = document.querySelector('#overall-table tbody');
+const resetOverallBtn = document.getElementById('reset-overall');
 
 async function startCamera() {
   const video = document.getElementById('cam');
@@ -69,6 +74,7 @@ function selectModel(modelName) {
   const modelLabel = document.getElementById('current-model');
   const toggleBtn = document.getElementById('toggle-camera');
 
+  // keep as-is; simple query param switch
   stream.src = `/video_feed?model=${modelName}`;
 
   let displayName = '';
@@ -124,13 +130,13 @@ function toggleCamera() {
     startCamera();
 
     // Resume server stream
-    if (currentModel.toLowerCase().startsWith("ensemble")) {
+    if (currentModel && currentModel.toLowerCase().startsWith("ensemble")) {
       const m1 = document.getElementById('model1').value;
       const m2 = document.getElementById('model2').value;
       stream.src = `/video_feed?model=ensemble&model1=${m1}&model2=${m2}`;
     } else {
       // map label back to key
-      const key = currentModel.toLowerCase();
+      const key = (currentModel || 'MobileNet').toLowerCase();
       stream.src = `/video_feed?model=${key}`;
     }
     toggleBtn.textContent = "Stop Camera";
@@ -138,5 +144,44 @@ function toggleCamera() {
   }
 }
 
-// NEW: kick off on load so server starts receiving frames
+// === NEW: overall polling + reset ===
+async function pollOverall() {
+  try {
+    const res = await fetch('/overall_json');
+    if (!res.ok) return;
+    const j = await res.json();
+
+    // headline
+    overallTopEl.textContent = `${j.top} ${j.top_pct}% (n=${j.total})`;
+
+    // table
+    overallTableBody.innerHTML = (j.summary || []).map(r => `
+      <tr>
+        <td>${r.label}</td>
+        <td class="stat">${r.count}</td>
+        <td class="stat">${r.pct}%</td>
+      </tr>
+    `).join('');
+  } catch (_) {
+    // silent
+  }
+}
+
+if (resetOverallBtn) {
+  resetOverallBtn.addEventListener('click', async () => {
+    try {
+      await fetch('/reset_overall', { method: 'POST' });
+      // force refresh
+      pollOverall();
+    } catch (e) {
+      console.warn('Reset overall failed:', e);
+    }
+  });
+}
+
+// kick off on load so server starts receiving frames AND overall panel updates
 window.addEventListener('load', startCamera);
+window.addEventListener('load', () => {
+  pollOverall();
+  setInterval(pollOverall, 1000);
+});

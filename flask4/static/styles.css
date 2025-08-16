@@ -19,7 +19,7 @@ label { margin: 0 8px; color: #cbd5e1; }
 select { padding: 6px; border-radius: 4px; }
 #current-model { margin-top: 8px; color: #94f1b8; }
 
-/* NEW: small capture preview; set display:none if you don't want to show it */
+/* capture preview stays hidden */
 .capture-preview {
   width: 0;
   height: 0;
@@ -27,3 +27,40 @@ select { padding: 6px; border-radius: 4px; }
   position: absolute;
   pointer-events: none;
 }
+
+/* --- NEW: Overall panel --- */
+#overall {
+  margin: 18px auto 0;
+  max-width: 720px;
+  text-align: left;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 12px;
+}
+#overall h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  color: #a5b4fc;
+}
+#overall-top.stat { font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+
+#overall-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+}
+#overall-table th, #overall-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #1f2937;
+}
+#overall-table th { text-align: left; color: #cbd5e1; }
+#overall-table td.stat { text-align: right; }
+
+/* reuse button styling for reset */
+#reset-overall {
+  margin-top: 6px; padding: 8px 12px; border-radius: 6px; border: none;
+  background: #1f2937; color: white; cursor: pointer;
+}
+#reset-overall:hover { background: #334155; }
