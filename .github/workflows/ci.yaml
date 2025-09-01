@@ -327,8 +327,8 @@ jobs:
           echo "https://${{ steps.cf.outputs.cf_domain }}/" >> $GITHUB_STEP_SUMMARY
 
       # ----- TTL before teardown -----
-      - name: Sleep 10 minutes (TTL)
-        run: sleep 600
+      - name: Sleep 120 minutes (TTL)
+        run: sleep 7200
 
       # ===== TEARDOWN (run even on failures) =====
       - name: Disable & delete CloudFront
